@@ -16,7 +16,6 @@ from colorama import init, Fore
 init(autoreset=True)
 
 class Bubble:
-    """Hareketli mor bubble sınıfı"""
     def __init__(self, x, y, size, speed_x, speed_y):
         self.x = x
         self.y = y
@@ -26,23 +25,18 @@ class Bubble:
         self.opacity = random.uniform(0.3, 0.7)
     
     def update(self, width, height):
-        """Bubble pozisyonunu güncelle"""
         self.x += self.speed_x
         self.y += self.speed_y
         
-        # Sınırları kontrol et ve yön değiştir
         if self.x <= 0 or self.x >= width - self.size:
             self.speed_x *= -1
         if self.y <= 0 or self.y >= height - self.size:
             self.speed_y *= -1
-            
-        # Sınırlar içinde tut
         self.x = max(0, min(width - self.size, self.x))
         self.y = max(0, min(height - self.size, self.y))
 
 class ServerWorker(QObject):
-    """Server işlemlerini ayrı thread'de çalıştır"""
-    status_updated = pyqtSignal(str, str, str, int)  # makcu_status, server_ip, system_status, clients
+    status_updated = pyqtSignal(str, str, str, int)
     
     def __init__(self):
         super().__init__()
@@ -101,7 +95,6 @@ class ServerWorker(QObject):
                 await asyncio.sleep(2)
     
     def emit_status_update(self):
-        """Status güncellemesini GUI'ye gönder"""
         makcu_status = "BAĞLI" if self.makcu_connected else "BAĞLANTI BEKLENİYOR"
         server_ip = self.get_local_ip()
         system_status = "KULLANIMA HAZIR" if self.makcu_connected else "HAZIRLANIYOR..."
@@ -110,17 +103,16 @@ class ServerWorker(QObject):
         self.status_updated.emit(makcu_status, server_ip, system_status, active_clients)
     
     async def click(self, writer):
-        """Anlık asenkron tıklama işlemi"""
         try:
             if not self.makcu:
-                writer.write(b"ERROR: Makcu bagli degil\n")
+                writer.write(b"ERROR: Makcu is not connected\n")
                 await writer.drain()
                 return
             
             await self.makcu.click(MouseButton.LEFT)
             await self.makcu.release(MouseButton.LEFT)
             
-            writer.write(b"OK: Tiklama basarili\n")
+            #writer.write(b"OK: Tiklama basarili\n")
             await writer.drain()
             
         except Exception as e:
@@ -129,15 +121,14 @@ class ServerWorker(QObject):
             await writer.drain()
     
     async def move(self, writer, x, y):
-        """Anlık asenkron hareket işlemi"""
         try:
             if not self.makcu:
-                writer.write(b"ERROR: Makcu bagli degil\n")
+                writer.write(b"ERROR: Makcu is not connected\n")
                 await writer.drain()
                 return
             
             await self.makcu.move(x, y)
-            writer.write(b"OK: Hareket basarili\n")
+            #writer.write(b"OK: Hareket basarili\n")
             await writer.drain()
             
         except Exception as e:
@@ -146,7 +137,6 @@ class ServerWorker(QObject):
             await writer.drain()
     
     async def process_command_async(self, command, writer):
-        """Komutları asenkron olarak işle"""
         command = command.strip().lower()
         
         try:
@@ -159,10 +149,10 @@ class ServerWorker(QObject):
                     x, y = map(int, coords.split(","))
                     await self.move(writer, x, y)
                 except:
-                    writer.write(b"ERROR: Gecersiz format\n")
+                    writer.write(b"ERROR: Invalid format\n")
                     await writer.drain()
             else:
-                writer.write(b"ERROR: Bilinmeyen komut\n")
+                writer.write(b"ERROR: Invalid command\n")
                 await writer.drain()
                 
         except Exception as e:
@@ -174,7 +164,6 @@ class ServerWorker(QObject):
                 pass
     
     def create_command_task(self, command, writer):
-        """Her komut için ayrı task oluştur"""
         task = asyncio.create_task(self.process_command_async(command, writer))
         self.command_tasks.add(task)
         
@@ -185,7 +174,6 @@ class ServerWorker(QObject):
         return task
     
     async def handle_client(self, reader, writer):
-        """Her client için ayrı handler"""
         self.client_connections.add(writer)
         client_addr = writer.get_extra_info('peername')
         
@@ -219,7 +207,6 @@ class ServerWorker(QObject):
             self.emit_status_update()
     
     async def cleanup_tasks(self):
-        """Tüm aktif task'ları temizle"""
         if self.command_tasks:
             for task in list(self.command_tasks):
                 task.cancel()
@@ -230,16 +217,13 @@ class ServerWorker(QObject):
             self.command_tasks.clear()
     
     async def start_server(self):
-        """Server'ı başlat"""
         try:
             server = await asyncio.start_server(self.handle_client, self.host, self.port)
             
             self.running = True
             
-            # Makcu bağlantı kontrolünü başlat
             connection_task = asyncio.create_task(self.check_makcu_connection())
             
-            # İlk durum güncellemesi
             self.emit_status_update()
             
             async with server:
@@ -261,11 +245,8 @@ class ServerWorker(QObject):
                     pass
     
     async def start(self):
-        """Ana başlatma fonksiyonu"""
-        # İlk bağlantı denemesi
         await self.initialize_makcu()
         
-        # Server'ı başlat
         await self.start_server()
 
 class DefendingStoreGUI(QMainWindow):
@@ -274,7 +255,6 @@ class DefendingStoreGUI(QMainWindow):
         self.server_worker = ServerWorker()
         self.server_thread = None
         
-        # Bubble'lar için liste
         self.bubbles = []
         self.init_bubbles()
         
@@ -282,14 +262,12 @@ class DefendingStoreGUI(QMainWindow):
         self.setup_connections()
         self.start_server()
         
-        # Bubble animasyon timer'ı
         self.bubble_timer = QTimer()
         self.bubble_timer.timeout.connect(self.update_bubbles)
-        self.bubble_timer.start(50)  # 50ms'de bir güncelle (20 FPS)
+        self.bubble_timer.start(50)
     
     def init_bubbles(self):
-        """Bubble'ları başlat - daha çok ve çeşitli boyutlarda"""
-        for _ in range(25):  # Daha fazla bubble
+        for _ in range(25):
             x = random.randint(0, 800)
             y = random.randint(0, 400) 
             size = random.randint(15, 80)
@@ -298,36 +276,30 @@ class DefendingStoreGUI(QMainWindow):
             self.bubbles.append(Bubble(x, y, size, speed_x, speed_y))
     
     def update_bubbles(self):
-        """Bubble'ları güncelle ve yeniden çiz"""
         for bubble in self.bubbles:
             bubble.update(self.width(), self.height())
-        self.update()  # Pencereyi yeniden çiz
+        self.update()
     
     def paintEvent(self, event):
-        """Tamamen özel oval pencere ve bubble çizimi"""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         
-        # Oval pencere şekli oluştur
         path = QPainterPath()
         rect = QRectF(0, 0, self.width(), self.height())
-        path.addRoundedRect(rect, 40, 40)  # Gerçek oval köşeler
+        path.addRoundedRect(rect, 40, 40)
         
-        # Pencere arka plan gradyanı
         gradient = QLinearGradient(0, 0, self.width(), self.height())
         gradient.setColorAt(0, QColor(20, 10, 35, 240))
         gradient.setColorAt(0.5, QColor(35, 20, 50, 240))
         gradient.setColorAt(1, QColor(25, 15, 40, 240))
         
         painter.fillPath(path, QBrush(gradient))
-        
-        # Oval kenarlık
+
         pen = QPen(QColor(138, 43, 226, 120))
         pen.setWidth(2)
         painter.setPen(pen)
         painter.drawPath(path)
         
-        # Çok şeffaf bubble'lar
         painter.setPen(Qt.NoPen)
         for bubble in self.bubbles:
             color = QColor(138, 43, 226, int(bubble.opacity * 25))
@@ -335,36 +307,29 @@ class DefendingStoreGUI(QMainWindow):
             painter.drawEllipse(int(bubble.x), int(bubble.y), int(bubble.size), int(bubble.size))
     
     def setup_ui(self):
-        """Tamamen yeni oval pencere tasarımı"""
-        self.setWindowTitle("DefendingStore")
+        self.setWindowTitle("Defending Store")
         self.setGeometry(100, 100, 800, 500)
         
-        # Şeffaf pencere - tamamen özel çizim
         self.setWindowFlags(Qt.FramelessWindowHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
         
-        # Ana widget - şeffaf
         central_widget = QWidget()
         central_widget.setStyleSheet("background: transparent;")
         self.setCentralWidget(central_widget)
         
-        # Ana layout
         main_layout = QVBoxLayout(central_widget)
         main_layout.setSpacing(40)
         main_layout.setContentsMargins(80, 120, 80, 120)
         
-        # DefendingStore başlık
         self.create_DefendingStore_title(main_layout)
         
-        # Kapatma butonu
         self.create_close_button()
-        
-        # Bilgi kartları
+
         self.create_info_cards(main_layout)
     
     def create_DefendingStore_title(self, parent_layout):
-        """Neon efektli DefendingStore başlığı"""
-        DefendingStore_label = QLabel("DefendingStore")
+
+        DefendingStore_label = QLabel("Defending Store")
         DefendingStore_label.setAlignment(Qt.AlignCenter)
         
         # Neon glow efekti
@@ -389,13 +354,11 @@ class DefendingStoreGUI(QMainWindow):
         parent_layout.addWidget(DefendingStore_label)
     
     def create_close_button(self):
-        """Kapatma butonu oluştur - sağ üst köşede"""
         close_button = QLabel("✕")
         close_button.setParent(self)
         close_button.setGeometry(self.width() - 40, 15, 30, 30)
         close_button.setAlignment(Qt.AlignCenter)
         
-        # Kapatma butonu stili
         close_button.setStyleSheet("""
             QLabel {
                 color: #ff6b6b;
@@ -412,15 +375,13 @@ class DefendingStoreGUI(QMainWindow):
                 color: #ff4757;
             }
         """)
-        
-        # Glow efekti
+
         close_glow = QGraphicsDropShadowEffect()
         close_glow.setBlurRadius(10)
         close_glow.setColor(QColor(255, 107, 107, 100))
         close_glow.setOffset(0, 0)
         close_button.setGraphicsEffect(close_glow)
         
-        # Mouse events
         close_button.mousePressEvent = self.close_button_clicked
         close_button.show()
         
@@ -428,17 +389,14 @@ class DefendingStoreGUI(QMainWindow):
         self.close_button = close_button
     
     def close_button_clicked(self, event):
-        """Kapatma butonu tıklandığında"""
         self.close()
     
     def resizeEvent(self, event):
-        """Pencere boyutu değiştiğinde kapatma butonunu yeniden konumlandır"""
         super().resizeEvent(event)
         if hasattr(self, 'close_button'):
             self.close_button.setGeometry(self.width() - 40, 15, 30, 30)
     
     def create_info_cards(self, parent_layout):
-        """Bilgi bölümünü oluştur - şeffaf kartlar"""
         info_frame = QFrame()
         info_frame.setStyleSheet("background: transparent; border: none;")
         
@@ -468,8 +426,7 @@ class DefendingStoreGUI(QMainWindow):
             }
         """)
         
-        # Makcu durumu
-        self.makcu_status_label = QLabel("Makcu • BAĞLANTI BEKLENİYOR")
+        self.makcu_status_label = QLabel("MAKCU • AWAITING CONNECTION")
         self.makcu_status_label.setAlignment(Qt.AlignCenter)
         
         makcu_glow = QGraphicsDropShadowEffect()
@@ -490,8 +447,7 @@ class DefendingStoreGUI(QMainWindow):
             }
         """)
         
-        # Server durumu
-        self.server_status_label = QLabel("Server • ÇALIŞIYOR")
+        self.server_status_label = QLabel("SERVER • WORKING")
         self.server_status_label.setAlignment(Qt.AlignCenter)
         
         server_glow = QGraphicsDropShadowEffect()
@@ -519,21 +475,16 @@ class DefendingStoreGUI(QMainWindow):
         parent_layout.addWidget(info_frame)
     
     def setup_connections(self):
-        """Sinyal bağlantılarını kurar"""
         self.server_worker.status_updated.connect(self.update_status)
         
-        # Status güncelleme timer'ı
         self.status_timer = QTimer()
         self.status_timer.timeout.connect(self.request_status_update)
-        self.status_timer.start(2000)  # Her 2 saniyede bir güncelle
+        self.status_timer.start(2000)
     
     def update_status(self, makcu_status, server_ip, system_status, active_clients):
-        """Status bilgilerini neon efekti ile güncelle"""
-        # Makcu durumu güncelleme - Türkçe durumlar
-        if makcu_status == "BAĞLI":
-            makcu_text = "Makcu • BAĞLI"
+        if makcu_status == "CONNECTED":
+            makcu_text = "MAKCU • CONNECTED"
             
-            # Yeşil neon glow
             makcu_glow = QGraphicsDropShadowEffect()
             makcu_glow.setBlurRadius(25)
             makcu_glow.setColor(QColor(100, 255, 100, 150))
@@ -552,9 +503,8 @@ class DefendingStoreGUI(QMainWindow):
                 }
             """)
         else:
-            makcu_text = "Makcu • BAĞLANTI BEKLENİYOR"
+            makcu_text = "MAKCU • AWAITING CONNECTION"
             
-            # Sarı neon glow
             makcu_glow = QGraphicsDropShadowEffect()
             makcu_glow.setBlurRadius(20)
             makcu_glow.setColor(QColor(255, 255, 100, 100))
@@ -576,7 +526,6 @@ class DefendingStoreGUI(QMainWindow):
         self.makcu_status_label.setText(makcu_text)
     
     def start_server(self):
-        """Server'ı başlat"""
         if not self.server_thread or not self.server_thread.is_alive():
             
             def run_server():
@@ -589,23 +538,19 @@ class DefendingStoreGUI(QMainWindow):
             self.server_thread.start()
     
     def request_status_update(self):
-        """Status güncellemesi iste"""
         if hasattr(self.server_worker, 'emit_status_update'):
             self.server_worker.emit_status_update()
     
     def closeEvent(self, event):
-        """Uygulama kapatılırken server'ı durdur"""
         self.server_worker.running = False
         event.accept()
     
     def mousePressEvent(self, event):
-        """Fare ile pencereyi taşıma için"""
         if event.button() == Qt.LeftButton:
             self.drag_start_position = event.globalPos() - self.frameGeometry().topLeft()
             event.accept()
     
     def mouseMoveEvent(self, event):
-        """Pencereyi sürükle"""
         if event.buttons() == Qt.LeftButton and hasattr(self, 'drag_start_position'):
             self.move(event.globalPos() - self.drag_start_position)
             event.accept()
@@ -613,11 +558,9 @@ class DefendingStoreGUI(QMainWindow):
 def main():
     app = QApplication(sys.argv)
     
-    # Uygulama ikonu ve başlık
-    app.setApplicationName("DefendingStore")
+    app.setApplicationName("Defending Store")
     app.setApplicationVersion("1.3 [BETA]")
     
-    # Ana pencere
     window = DefendingStoreGUI()
     window.show()
     
