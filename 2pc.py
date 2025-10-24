@@ -1,57 +1,31 @@
 import sys
 import asyncio
 import threading
-import random
-import math
 import socket
 import concurrent.futures
-from colorama import init, Fore, Style, Back
+from makcu import create_async_controller, MouseButton
+from colorama import init, Fore, Style
 import time
-import os
-
-# Windows için ctypes modülünü içe aktar
-try:
-    if os.name == 'nt':
-        import ctypes
-        from ctypes import wintypes
-except ImportError:
-    ctypes = None
 
 init(autoreset=True)
 
 class ServerWorker:
-    """Server işlemlerini yönetir"""
+    """Server işlemleri için worker sınıfı"""
+    
     def __init__(self):
         self.host = '0.0.0.0'
         self.port = 1515
+        self.makcu = None
         self.running = False
+        self.makcu_connected = False
         self.client_connections = set()
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=20)
         self.command_tasks = set()
-        self.makcu_connected = False
-        self.makcu = None
-        self.set_console_title()
+        self.status_callback = None
         
-    def set_console_title(self):
-        """Konsol başlığını ayarla"""
-        title = "Defending Store | https://defendingstore.com"
-        if os.name == 'nt' and ctypes:
-            # Windows için başlık ayarlama
-            try:
-                ctypes.windll.kernel32.SetConsoleTitleW(title)
-            except Exception:
-                pass  # Başlık ayarlanamazsa devam et
-        else:
-            # Diğer sistemler için başlık ayarlama
-            try:
-                sys.stdout.write(f'\033]0;{title}\a')
-                sys.stdout.flush()
-            except Exception:
-                pass  # Başlık ayarlanamazsa devam et
-        
-    def clear_screen(self):
-        """Konsolu temizle"""
-        os.system('cls' if os.name == 'nt' else 'clear')
+    def set_status_callback(self, callback):
+        """Set callback function for status updates"""
+        self.status_callback = callback
         
     def get_local_ip(self):
         try:
@@ -62,70 +36,63 @@ class ServerWorker:
             return "192.168.1.100"
     
     async def initialize_makcu(self):
-        """Makcu bağlantısını başlat - örnek/mock bağlantı"""
+        """Makcu bağlantısını başlat"""
         try:
-            # Burada gerçek bir makcu bağlantısı başlatılabilir
-            # Şimdilik mock bir bağlantı simulasyonu yapıyoruz
-            print(f"{Fore.YELLOW}Makcu bağlantısı deneniyor...")
-            await asyncio.sleep(1)  # Bağlantı süresi simulasyonu
-            
-            # Mock başarılı bağlantı
-            self.makcu_connected = True
-            print(f"{Fore.GREEN}Makcu bağlantısı başarılı!")
-            return True
+            self.makcu = await create_async_controller(debug=False, auto_reconnect=True)
+            if self.makcu:
+                self.makcu_connected = True
+                return True
+            else:
+                self.makcu_connected = False
+                return False
         except Exception as e:
             self.makcu_connected = False
-            print(f"{Fore.RED}Makcu bağlantı hatası: {e}")
             return False
     
     async def check_makcu_connection(self):
-        """Her 5 saniyede bir Makcu bağlantısını kontrol et"""
+        """Her 2 saniyede bir Makcu bağlantısını kontrol et"""
         while self.running:
             try:
                 if not self.makcu_connected:
                     success = await self.initialize_makcu()
                     if success:
-                        self.display_status()
+                        self.emit_status_update()
                 else:
-                    # Bağlantı varsa, bağlantı durumunu kontrol et
-                    # Burada gerçek bağlantı kontrolü yapılabilir
-                    pass
+                    try:
+                        if not self.makcu:
+                            self.makcu_connected = False
+                            self.emit_status_update()
+                    except:
+                        self.makcu_connected = False
+                        self.makcu = None
+                        self.emit_status_update()
                 
-                await asyncio.sleep(5)
+                await asyncio.sleep(2)
                 
             except Exception as e:
-                print(f"{Fore.RED}Bağlantı kontrol hatası: {e}")
-                await asyncio.sleep(5)
+                await asyncio.sleep(2)
     
-    def display_status(self):
-        """Durum bilgisini göster"""
-        self.clear_screen()
-        self.set_console_title()  # Başlığı güncelle
-        ip_address = self.get_local_ip()
-        client_count = len(self.client_connections)
-        connection_status = f"{Fore.GREEN}BAĞLI" if self.makcu_connected else f"{Fore.YELLOW}BAĞLANTI BEKLENİYOR"
-        system_status = f"{Fore.GREEN}KULLANIMA HAZIR" if self.makcu_connected else f"{Fore.YELLOW}HAZIRLANIYOR..."
+    def emit_status_update(self):
+        """Status güncellemesini terminale gönder"""
+        makcu_status = "BAĞLI" if self.makcu_connected else "BAĞLANTI BEKLENİYOR"
+        server_ip = self.get_local_ip()
+        system_status = "KULLANIMA HAZIR" if self.makcu_connected else "HAZIRLANIYOR..."
+        active_clients = len(self.client_connections)
         
-        print(f"\n{Back.BLUE}{Fore.WHITE}{Style.BRIGHT}=== DEFENDING STORE SERVER ==={Style.RESET_ALL}")
-        print(f"{Fore.CYAN}Website: {Fore.MAGENTA}https://defendingstore.com")
-        print(f"{Fore.CYAN}IP Address: {Fore.WHITE}{ip_address}")
-        print(f"{Fore.CYAN}Port: {Fore.WHITE}{self.port}")
-        print(f"{Fore.CYAN}Makcu Status: {connection_status}")
-        print(f"{Fore.CYAN}System Status: {system_status}")
-        print(f"{Fore.CYAN}Active Clients: {Fore.WHITE}{client_count}")
-        print(f"{Fore.CYAN}Server Status: {Fore.GREEN}RUNNING")
-        print("=" * 40)
+        if self.status_callback:
+            self.status_callback(makcu_status, server_ip, system_status, active_clients)
     
     async def click(self, writer):
         """Anlık asenkron tıklama işlemi"""
         try:
-            if not self.makcu_connected:
+            if not self.makcu:
                 writer.write(b"ERROR: Makcu bagli degil\n")
                 await writer.drain()
                 return
             
-            # Mock tıklama işlemi
-            print(f"{Fore.YELLOW}Tıklama işlemi gerçekleştirildi")
+            await self.makcu.click(MouseButton.LEFT)
+            await self.makcu.release(MouseButton.LEFT)
+            
             writer.write(b"OK: Tiklama basarili\n")
             await writer.drain()
             
@@ -137,13 +104,12 @@ class ServerWorker:
     async def move(self, writer, x, y):
         """Anlık asenkron hareket işlemi"""
         try:
-            if not self.makcu_connected:
+            if not self.makcu:
                 writer.write(b"ERROR: Makcu bagli degil\n")
                 await writer.drain()
                 return
             
-            # Mock hareket işlemi
-            print(f"{Fore.YELLOW}Hareket işlemi: X={x}, Y={y}")
+            await self.makcu.move(x, y)
             writer.write(b"OK: Hareket basarili\n")
             await writer.drain()
             
@@ -181,7 +147,6 @@ class ServerWorker:
                 pass
     
     def create_command_task(self, command, writer):
-        """Her komut için ayrı task oluştur"""
         task = asyncio.create_task(self.process_command_async(command, writer))
         self.command_tasks.add(task)
         
@@ -195,9 +160,9 @@ class ServerWorker:
         """Her client için ayrı handler"""
         self.client_connections.add(writer)
         client_addr = writer.get_extra_info('peername')
-        print(f"{Fore.GREEN}Yeni client bağlandı: {client_addr}")
         
-        self.display_status()
+        print(f"{Fore.GREEN}[+] New Connecting: {client_addr}")
+        self.emit_status_update()
         
         try:
             while self.running:
@@ -208,8 +173,7 @@ class ServerWorker:
                     
                     command = data.decode('utf-8').strip()
                     if command:
-                        print(f"{Fore.CYAN}Gelen komut: {Fore.WHITE}{command}")
-                        self.display_status()  # Ekranı temizle ve yeniden göster
+                        #print(f"{Fore.CYAN}[*] Komut alındı: {command}")
                         self.create_command_task(command, writer)
                         
                 except asyncio.TimeoutError:
@@ -226,8 +190,8 @@ class ServerWorker:
             except:
                 pass
             self.client_connections.discard(writer)
-            print(f"{Fore.RED}Client bağlantısı kesildi: {client_addr}")
-            self.display_status()
+            print(f"{Fore.YELLOW}[-] Connecting Closed: {client_addr}")
+            self.emit_status_update()
     
     async def cleanup_tasks(self):
         """Tüm aktif task'ları temizle"""
@@ -244,8 +208,6 @@ class ServerWorker:
         """Server'ı başlat"""
         try:
             server = await asyncio.start_server(self.handle_client, self.host, self.port)
-            print(f"{Fore.GREEN}DEFENDING STORE Server başlatıldı!")
-            print(f"{Fore.CYAN}Dinlenen adres: {Fore.WHITE}{self.host}:{self.port}")
             
             self.running = True
             
@@ -253,19 +215,31 @@ class ServerWorker:
             connection_task = asyncio.create_task(self.check_makcu_connection())
             
             # İlk durum güncellemesi
-            self.display_status()
+            self.emit_status_update()
+            
+            print(f"{Fore.MAGENTA}=== Defending Store SERVER ===")
+            print(f"{Fore.BLUE}Server Started: {self.host}:{self.port}")
+            print(f"{Fore.BLUE}Makcu Status: { 'Connected' if self.makcu_connected else 'connect waiting...' }")
+            print(f"{Fore.BLUE}IP: {self.get_local_ip()}")
+            print(f"{Fore.MAGENTA}======================")
             
             async with server:
                 await server.serve_forever()
                 
         except Exception as e:
-            print(f"{Fore.RED}Server başlatma hatası: {e}")
+            print(f"{Fore.RED}[!] Server Error: {e}")
         finally:
             self.running = False
             await self.cleanup_tasks()
             
             if hasattr(self, 'executor'):
                 self.executor.shutdown(wait=False)
+            
+            if self.makcu:
+                try:
+                    await self.makcu.disconnect()
+                except:
+                    pass
     
     async def start(self):
         """Ana başlatma fonksiyonu"""
@@ -275,25 +249,53 @@ class ServerWorker:
         # Server'ı başlat
         await self.start_server()
 
+class TerminalInterface:
+    def __init__(self):
+        self.server_worker = ServerWorker()
+        self.server_worker.set_status_callback(self.update_status)
+        self.server_thread = None
+    
+    def update_status(self, makcu_status, server_ip, system_status, active_clients):
+        """Terminalde durum güncellemesi göster"""
+        status_color = Fore.GREEN if makcu_status == "BAĞLI" else Fore.YELLOW
+        print(f"\n{Fore.CYAN}[DURUM GÜNCELLEMESİ]")
+        print(f"{Fore.WHITE}Makcu: {status_color}{makcu_status}")
+        print(f"{Fore.WHITE}Server IP: {Fore.WHITE}{server_ip}")
+        print(f"{Fore.WHITE}Sistem: {Fore.WHITE}{system_status}")
+        print(f"{Fore.WHITE}Aktif Bağlantılar: {Fore.WHITE}{active_clients}")
+        print(f"{Fore.CYAN}{'='*30}")
+    
+    def start_server(self):
+        """Server'ı başlat"""
+        def run_server():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(self.server_worker.start())
+        
+        self.server_thread = threading.Thread(target=run_server)
+        self.server_thread.daemon = True
+        self.server_thread.start()
+    
+    def run(self):
+        """Ana uygulama döngüsü"""
+        print(f"{Fore.MAGENTA}Defending Store Terminal Server")
+        print(f"{Fore.MAGENTA}======================")
+        print(f"{Fore.WHITE}Server başlatılıyor...")
+        
+        self.start_server()
+        
+        try:
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            print(f"\n{Fore.YELLOW}Server kapatılıyor...")
+            self.server_worker.running = False
+            sys.exit(0)
+
 def main():
-    # Konsolu temizle
-    os.system('cls' if os.name == 'nt' else 'clear')
-    
-    print(f"{Back.BLUE}{Fore.WHITE}{Style.BRIGHT}=== DEFENDING STORE ==={Style.RESET_ALL}")
-    print(f"{Fore.CYAN}Website: {Fore.MAGENTA}https://defendingstore.com")
-    print(f"{Fore.YELLOW}Server başlatılıyor...")
-    
-    # Server worker oluştur
-    server_worker = ServerWorker()
-    
-    # Async event loop başlat
-    try:
-        asyncio.run(server_worker.start())
-    except KeyboardInterrupt:
-        print(f"\n{Fore.YELLOW}Server kapatılıyor...")
-        server_worker.running = False
-    except Exception as e:
-        print(f"{Fore.RED}Hata oluştu: {e}")
+    # Uygulama ikonu ve başlık
+    app = TerminalInterface()
+    app.run()
 
 if __name__ == "__main__":
     main()
