@@ -1,0 +1,7 @@
+PyQt5
+numpy
+qtawesome
+pynput
+mss
+opencv-python
+keyboard
