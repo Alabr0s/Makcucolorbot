@@ -2,6 +2,15 @@
 
 A sophisticated multi-computer aim assistance system designed for low-spec secondary computers. This project enables color-based target detection on a powerful primary computer while sending precise mouse commands to a secondary computer with limited resources.
 
+
+# Update Notes:
+
+*Version 1.2*
+[+] Freezing issue on the Aimbot page resolved
+[+] Queue added to the TCP client (for optimization)
+[+] Lag issue while aiming fixed
+
+
 ## Features
 
 ### Aimbot System
@@ -77,6 +86,7 @@ The system consists of two components:
 2. **Secondary Computer**: Receives lightweight mouse commands via TCP connection
 
 Communication between the computers is handled through a custom TCP protocol on port 1515, ensuring minimal latency and maximum responsiveness.
+
 
 
 
