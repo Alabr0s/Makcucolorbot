@@ -31,6 +31,11 @@ class MouseController:
         # RCS integration
         self.rcs_worker = None
         self.rcs_integration_enabled = True
+        
+        # Yeni eklenen özellikler
+        self.last_send_time = time.time()
+        self.send_cooldown = 0.001  # 1ms bekleme süresi
+        self.send_queue = []  # Gönderim kuyruğu
 
     def calculate_direct_movement(self, target_x, target_y, center_x, center_y):
         """
@@ -85,15 +90,16 @@ class MouseController:
 
         # If we have previously locked onto a target and it's still on screen, prioritize it.
         # This prevents meaningless transitions (flickering) between targets.
-        if self.last_target and len(self.last_target) >= 2:
+        last_target = self.last_target
+        if last_target is not None and isinstance(last_target, (list, tuple)) and len(last_target) >= 2:
             # Check if there's a point near `last_target` in `positions`
             is_last_target_still_visible = any(
-                ((pos[0] - self.last_target[0]) ** 2 + (pos[1] - self.last_target[1]) ** 2) ** 0.5 < 25 # Stability threshold
+                ((pos[0] - last_target[0]) ** 2 + (pos[1] - last_target[1]) ** 2) ** 0.5 < 25 # Stability threshold
                 for pos in positions
             )
             if is_last_target_still_visible:
                  # Find the closest new position but still close to the last target
-                closest_to_last = min(positions, key=lambda pos: ((pos[0] - self.last_target[0])**2 + (pos[1] - self.last_target[1])**2)**0.5)
+                closest_to_last = min(positions, key=lambda pos: ((pos[0] - last_target[0])**2 + (pos[1] - last_target[1])**2)**0.5)
                 self.last_target = closest_to_last
                 return closest_to_last
 
@@ -109,6 +115,12 @@ class MouseController:
         Prevents unnecessary data transmission by checking the minimum movement threshold.
         Cancels up/down movements when RCS is active with RCS integration.
         """
+        current_time = time.time()
+        
+        # Gönderim sıklığını sınırla
+        if current_time - self.last_send_time < self.send_cooldown:
+            return False
+            
         # RCS integration check
         if (self.rcs_integration_enabled and self.rcs_worker and 
             hasattr(self.rcs_worker, 'is_sending_rcs_down') and 
@@ -123,8 +135,12 @@ class MouseController:
             success = self.tcp_client.send_movement(move_x, move_y)
             if not success:
                 time.sleep(0.001)  # Short wait time
-                return self.tcp_client.send_movement(move_x, move_y)
-            return True
+                success = self.tcp_client.send_movement(move_x, move_y)
+                
+            if success:
+                self.last_send_time = current_time
+                
+            return success
         return False
 
     def apply_smoothing(self, move_x, move_y, distance):
