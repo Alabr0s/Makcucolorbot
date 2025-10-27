@@ -29,8 +29,6 @@ class AimbotTab(QWidget):
         self.debug_window = None  # Debug window reference
         self.setup_ui()
         
-
-        
         # Start screen scanner
         self.screen_scanner.target_found.connect(self.on_target_found)
         self.screen_scanner.start()
@@ -539,10 +537,15 @@ class AimbotTab(QWidget):
 
     def on_target_found(self, move_x, move_y):
         """Called when target is found"""
-        # Send message to status bar in main application
+        # Send message to status bar in main application with rate limiting
         if hasattr(self.parent_app, 'statusBar'):
-            self.parent_app.statusBar.showMessage(f"Target found: {move_x}, {move_y}", 500)
-    
+            # Sadece her 100ms'de bir güncelle
+            import time
+            current_time = time.time()
+            if not hasattr(self, '_last_status_update') or current_time - self._last_status_update > 0.1:
+                self.parent_app.statusBar.showMessage(f"Target found: {move_x}, {move_y}", 500)
+                self._last_status_update = current_time
+
     def load_settings(self, settings):
         """Load settings from config - COMPREHENSIVE VERSION"""
         try:
