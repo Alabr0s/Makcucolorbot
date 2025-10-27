@@ -45,8 +45,6 @@ class ScreenScanner(QThread):
         self.toggle_key = 'insert'  # Default toggle key
         self.last_toggle_time = 0  # Last toggle time (spam prevention)
 
-
-
         # Target determination settings
         self.target_type = "body"  # "head" or "body"
         self.y_offset = 0  # Y offset (0-10 px range)
@@ -64,23 +62,31 @@ class ScreenScanner(QThread):
         
         # New previous target tracking (for prediction)
         self.previous_target = None
+        
+        # Yeni eklenen özellikler
+        self.error_count = 0
+        self.max_errors = 5
+        self.last_frame_time = time.time()
+        self.frame_times = []
 
     def run(self):
         self.running = True
         with mss.mss() as sct:
             while self.running:
+                frame_start_time = time.time()
+                
                 try:
                     # Toggle key check
                     self.check_toggle_key()
 
                     # Pause check
                     if self.paused:
-                        time.sleep(0.1)
+                        time.sleep(0.01)  # Daha kısa bekleme süresi
                         continue
 
                     # Indicator check - Safe version
                     if not self.indicator_window or not self.indicator_window.isVisible():
-                        time.sleep(0.1)
+                        time.sleep(0.01)
                         continue
                     
                     # Check indicator dimensions
@@ -88,18 +94,18 @@ class ScreenScanner(QThread):
                     indicator_height = getattr(self.indicator_window, 'indicator_height', 0)
                     
                     if indicator_width <= 0 or indicator_height <= 0:
-                        time.sleep(0.1)
+                        time.sleep(0.01)
                         continue
 
                     # Don't scan if aimbot is disabled
                     if not self.aimbot_enabled:
-                        time.sleep(0.1)
+                        time.sleep(0.01)
                         continue
 
                     # Holdkey check
                     if self.holdkey_enabled:
                         if not self.is_key_pressed(self.holdkey):
-                            time.sleep(0.01)
+                            time.sleep(0.005)  # Daha kısa bekleme süresi
                             continue
 
                     # Ekran merkezini al
@@ -114,7 +120,7 @@ class ScreenScanner(QThread):
                     
                     # Safety check - minimum size
                     if scan_width < 1 or scan_height < 1:
-                        time.sleep(0.1)
+                        time.sleep(0.01)
                         continue
 
                     monitor = {
@@ -195,9 +201,6 @@ class ScreenScanner(QThread):
                         except Exception as e:
                             print(f"Debug window update error: {e}")
 
-                    # Dynamic wait time with FPS control
-                    frame_start_time = time.time()
-                    
                     # Lock onto primary target (number 1)
                     if self.primary_target:
                         # Circle check: Move mouse if any point touches the circle
@@ -223,7 +226,7 @@ class ScreenScanner(QThread):
                         # Reset last target when target is not found
                         self.mouse_controller.reset_tracking()
 
-                    # FPS-based frame timing
+                    # FPS-based frame timing with error handling
                     frame_end_time = time.time()
                     frame_duration = frame_end_time - frame_start_time
                     
@@ -232,12 +235,23 @@ class ScreenScanner(QThread):
                     
                     if sleep_time > 0:
                         time.sleep(sleep_time)
-                        
+                    
+                    # Hata sayacını sıfırla
+                    self.error_count = 0
+                    
                 except Exception as e:
                     print(f"❌ Screen scanner error: {e}")
                     import traceback
                     traceback.print_exc()
-                    time.sleep(0.1)  # Short wait in case of error
+                    
+                    # Hata sayacını artır
+                    self.error_count += 1
+                    
+                    # Çok fazla hata varsa daha uzun bekle
+                    if self.error_count > self.max_errors:
+                        time.sleep(0.1)
+                    else:
+                        time.sleep(0.01)  # Kısa bekleme süresi
 
     def find_target_color(self, img):
         """Search for target color - In HSV format"""
@@ -491,24 +505,26 @@ class ScreenScanner(QThread):
     def _show_aimbot_notification(self):
         """Show aimbot status notification"""
         try:
-            from utils.notification_system import notification_manager
-            notification_manager.show_aimbot_status(self.aimbot_enabled)
+            import utils.notification_system
+            if hasattr(utils.notification_system, 'notification_manager'):
+                notification_manager = utils.notification_system.notification_manager
+                if hasattr(notification_manager, 'show_aimbot_status'):
+                    notification_manager.show_aimbot_status(self.aimbot_enabled)
         except Exception as e:
             print(f"Aimbot notification error: {e}")
 
     def _show_holdkey_notification(self, enabled: bool, key: str):
         """Show holdkey status notification"""
         try:
-            from utils.notification_system import show_info, show_success, show_warning
-
+            import utils
             if enabled:
-                show_success(
+                utils.show_success(
                     "Aimbot Holdkey Active",
                     f"Holdkey mode enabled (Key: {key.upper()})",
                     2000
                 )
             else:
-                show_warning(
+                utils.show_warning(
                     "Aimbot Holdkey Inactive",
                     "Holdkey mode disabled",
                     2000
@@ -785,7 +801,16 @@ class ScreenScanner(QThread):
         Set scan speed (1-100).
         """
         self.scan_speed = max(1, min(100, speed))
-        
+        # Scan speed ayarına göre FPS'i otomatik ayarla
+        if speed >= 90:
+            self.set_fps(200)
+        elif speed >= 70:
+            self.set_fps(175)
+        elif speed >= 50:
+            self.set_fps(160)
+        else:
+            self.set_fps(125)
+
     def set_fps(self, fps):
         """
         Set target FPS value and calculate frame time.
