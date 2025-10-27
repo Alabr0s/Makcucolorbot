@@ -40,6 +40,10 @@ class AimTCPClient:
         self.last_connect_attempt = 0
         self.connect_cooldown = 0.1
         self.connection_lock = threading.Lock()
+        # Yeni eklenen özellikler
+        self.reconnect_attempts = 0
+        self.max_reconnect_attempts = 3
+        self.last_successful_send = time.time()
     
     @property
     def host(self):
@@ -82,9 +86,17 @@ class AimTCPClient:
                 return False
     
     def send_movement(self, x, y):
-        """Send movement command"""
+        """Send movement command with improved reliability"""
+        # Bağlantı kontrolü ve yeniden bağlantı denemeleri
         if not self.connected:
-            if not self.connect():
+            success = False
+            for attempt in range(self.max_reconnect_attempts):
+                if self.connect():
+                    success = True
+                    break
+                time.sleep(0.01 * (attempt + 1))  # Artan bekleme süresi
+            
+            if not success:
                 return False
         
         try:
@@ -92,10 +104,14 @@ class AimTCPClient:
             with self.connection_lock:
                 if self.socket:
                     self.socket.send(message.encode('utf-8'))
+                    self.last_successful_send = time.time()
+                    self.reconnect_attempts = 0  # Başarılı gönderimde sıfırla
                     return True
                 return False
-        except Exception:
+        except Exception as e:
             self.connected = False
+            self.reconnect_attempts += 1
+            
             if self.socket:
                 try:
                     self.socket.close()
