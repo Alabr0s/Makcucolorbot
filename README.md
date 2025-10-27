@@ -6,9 +6,9 @@ A sophisticated multi-computer aim assistance system designed for low-spec secon
 # Update Notes:
 
 *Version 1.2*
-[+] Freezing issue on the Aimbot page resolved
-[+] Queue added to the TCP client (for optimization)
-[+] Lag issue while aiming fixed
+- Freezing issue on the Aimbot page resolved
+- Queue added to the TCP client (for optimization)
+- Lag issue while aiming fixed
 
 
 ## Features
@@ -91,3 +91,4 @@ Communication between the computers is handled through a custom TCP protocol on 
 
 
 This is a defendingstore.com project.
+
