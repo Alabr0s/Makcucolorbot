@@ -2,6 +2,11 @@
 
 A sophisticated multi-computer aim assistance system designed for low-spec secondary computers. This project enables color-based target detection on a powerful primary computer while sending precise mouse commands to a secondary computer with limited resources.
 
+### Showcase Video
+Thanks for the video, KainX
+
+[Watch Showcase](https://streamable.com/ltv74c)
+
 
 # Update Notes:
 
@@ -91,4 +96,3 @@ Communication between the computers is handled through a custom TCP protocol on 
 
 
 This is a defendingstore.com project.
-
