@@ -1,7 +1,7 @@
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QFormLayout, QGroupBox, QSlider, 
                              QHBoxLayout, QLabel, QCheckBox, QPushButton, QScrollArea)
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer
-from PyQt5.QtGui import QColor
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer, QSize
+from PyQt5.QtGui import QColor, QIcon, QPixmap
 from aimbot.key_capture import KeyCaptureButton
 from controllers.theme_controller import WindowColorManager
 from models.color_palette import ColorTheme
@@ -25,8 +25,8 @@ class TriggerbotScanner(QThread):
         self.enabled = False
         
         # Triggerbot ayarları
-        self.fire_delay_min = 170
-        self.fire_delay_max = 480
+        self.fire_delay_min = 180
+        self.fire_delay_max = 280
         self.area_size = 6
         self.scan_fps = 200
         self.last_fire_time = 0
@@ -486,6 +486,41 @@ class FireSettingsTab(QWidget):
         self.enabled_checkbox = QCheckBox()
         self.enabled_checkbox.stateChanged.connect(self.on_enabled_changed)
         layout.addRow("Triggerbot Active:", self.enabled_checkbox)
+        
+        # Weapon selection buttons
+        weapon_layout = QHBoxLayout()
+        weapon_layout.setSpacing(15)
+        weapon_layout.setContentsMargins(0, 10, 0, 10)
+        
+        # Ghost button
+        self.ghost_button = QPushButton()
+        self.ghost_button.setIcon(QIcon("image/ghost.png"))
+        self.ghost_button.setIconSize(QSize(40, 40))
+        self.ghost_button.setFixedSize(60, 60)
+        self.ghost_button.clicked.connect(lambda: self.set_weapon_delays(180, 300))
+        self.ghost_button.setToolTip("Ghost - Min: 180ms, Max: 300ms")
+        weapon_layout.addWidget(self.ghost_button)
+        
+        # Sheriff button
+        self.sheriff_button = QPushButton()
+        self.sheriff_button.setIcon(QIcon("image/sheriff.png"))
+        self.sheriff_button.setIconSize(QSize(40, 40))
+        self.sheriff_button.setFixedSize(60, 60)
+        self.sheriff_button.clicked.connect(lambda: self.set_weapon_delays(450, 560))
+        self.sheriff_button.setToolTip("Sheriff - Min: 450ms, Max: 560ms")
+        weapon_layout.addWidget(self.sheriff_button)
+        
+        # Vandal button
+        self.vandal_button = QPushButton()
+        self.vandal_button.setIcon(QIcon("image/vandal.png"))
+        self.vandal_button.setIconSize(QSize(40, 40))
+        self.vandal_button.setFixedSize(60, 60)
+        self.vandal_button.clicked.connect(lambda: self.set_weapon_delays(180, 280))
+        self.vandal_button.setToolTip("Vandal - Min: 180ms, Max: 280ms")
+        weapon_layout.addWidget(self.vandal_button)
+        
+        weapon_layout.addStretch()
+        layout.addRow("Weapon Presets:", weapon_layout)
         
         # Status indicator
         self.status_label = QLabel("Disabled")
@@ -1093,3 +1128,16 @@ class FireSettingsTab(QWidget):
                 
         except Exception as e:
             print(f"Fire settings cleanup error: {e}")
+
+    def set_weapon_delays(self, min_delay, max_delay):
+        """Set weapon-specific delay values"""
+        self.widgets["fire_delay_min"].setValue(min_delay)
+        self.widgets["fire_delay_max"].setValue(max_delay)
+        print(f"Weapon delays set: Min={min_delay}ms, Max={max_delay}ms")
+        
+        # Show notification
+        try:
+            from utils.notification_system import show_info
+            show_info("Delay Updated", f"Min: {min_delay}ms, Max: {max_delay}ms", 1500)
+        except Exception as e:
+            print(f"Notification error: {e}")
