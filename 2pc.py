@@ -558,7 +558,7 @@ class DefendingStoreGUI(QMainWindow):
 def main():
     app = QApplication(sys.argv)
     
-    app.setApplicationName("Defending Store")
+    app.setApplicationName("DefendingStore")
     app.setApplicationVersion("1.3 [BETA]")
     
     window = DefendingStoreGUI()

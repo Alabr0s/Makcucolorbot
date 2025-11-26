@@ -160,6 +160,7 @@ class AnimatedSplashScreen(QSplashScreen):
         self.fade_animation.start()
         
         QTimer.singleShot(3000, self.close)
+
 class MakcuTCPServer:
     def __init__(self, host='127.0.0.1', port=1515):
         self.host = host
@@ -248,6 +249,11 @@ class MakcuTCPServer:
     
     def handle_client(self, client_socket, client_address):
         try:
+            # --- BURAYA EKLENDİ (İstemci için kritik hız ayarı) ---
+            # TCP_NODELAY: Küçük veri paketlerinin birikmesini engeller, anında iletir.
+            client_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            # ------------------------------------------------------
+
             status = "ENABLED" if self.makcu_enabled else "DISABLED"
             welcome_msg = f"Connected to Makcu TCP Server\nMakcu Status: {status}\nCommands: 'firecmds', 'hareket+x,y', 'release'\n"
             client_socket.send(welcome_msg.encode('utf-8'))
@@ -279,6 +285,12 @@ class MakcuTCPServer:
     def start_server(self):
         try:
             self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            
+            # --- BURAYA EKLENDİ (Sunucu soketi için ayar) ---
+            # Soket oluşturulduğu an gecikme önleyiciyi aktif ediyoruz.
+            self.server_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1) 
+            # ------------------------------------------------
+            
             self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             self.server_socket.bind((self.host, self.port))
             self.server_socket.listen(5)
@@ -288,6 +300,7 @@ class MakcuTCPServer:
             while self.running:
                 try:
                     client_socket, client_address = self.server_socket.accept()
+                    
                     client_thread = threading.Thread(
                         target=self.handle_client,
                         args=(client_socket, client_address),
@@ -348,6 +361,7 @@ class ServerThread(QThread):
             self.server.stop_server()
         self.quit()
         self.wait()
+
 def show_splash_screen():
     app = QApplication(sys.argv)
     splash = AnimatedSplashScreen()

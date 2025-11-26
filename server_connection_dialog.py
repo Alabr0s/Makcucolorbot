@@ -61,6 +61,13 @@ class NetworkScanner(QThread):
         """Test TCP connection to specified IP and port"""
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            
+            # --- TCP_NODELAY EKLENDI ---
+            # Nagle algoritmasını kapatır, bağlantı testi sırasında
+            # handshake işleminin milisaniye daha hızlı olmasını sağlar.
+            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            # ---------------------------
+
             sock.settimeout(timeout)
             result = sock.connect_ex((ip, port))
             sock.close()
@@ -374,6 +381,12 @@ class ServerConnectionDialog(QDialog):
         try:
             import socket
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            
+            # --- TCP_NODELAY EKLENDI ---
+            # Burada da manuel giriş testi için gecikmeyi önler
+            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            # ---------------------------
+
             sock.settimeout(timeout)
             result = sock.connect_ex((ip, port))
             sock.close()
@@ -554,3 +567,12 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     ip = show_connection_dialog()
     print(f"Selected IP: {ip}")
+    
+    # -------------------------------------------------------------
+    # ÖNEMLİ: BU IP'Yİ ALDIKTAN SONRA ANA PROGRAMINDA
+    # ŞÖYLE BAĞLANMALISIN (ASIL HIZ FARKI BURADA OLACAK):
+    # -------------------------------------------------------------
+    # main_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    # main_sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1) # <--- Kritik Satır
+    # main_sock.connect((ip, 1515))
+    # ... mesaj gönder ...
