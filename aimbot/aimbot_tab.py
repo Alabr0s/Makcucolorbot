@@ -29,6 +29,8 @@ class AimbotTab(QWidget):
         self.debug_window = None  # Debug window reference
         self.setup_ui()
         
+
+        
         # Start screen scanner
         self.screen_scanner.target_found.connect(self.on_target_found)
         self.screen_scanner.start()
@@ -73,18 +75,18 @@ class AimbotTab(QWidget):
         layout.addRow("Show:", self.indicator_checkbox)
         
         # Size X slider
-        size_x_widget, self.size_x_slider = self.create_modern_slider(0, 200, self.update_indicator_from_controls, 60, "px")
+        size_x_widget, self.size_x_slider = self.create_modern_slider(0, 200, self.update_indicator_from_controls, 80, "px")
         layout.addRow("Size X:", size_x_widget)
         
         # Size Y slider
-        size_y_widget, self.size_y_slider = self.create_modern_slider(0, 200, self.update_indicator_from_controls, 13, "px")
+        size_y_widget, self.size_y_slider = self.create_modern_slider(0, 200, self.update_indicator_from_controls, 15, "px")
         layout.addRow("Size Y:", size_y_widget)
         
 
         
         # === AIMBOT SETTINGS ===
         # Aim speed
-        aim_speed_widget, self.aim_speed_slider = self.create_modern_slider(1, 50, self.update_aim_speed, 3, "")
+        aim_speed_widget, self.aim_speed_slider = self.create_modern_slider(1, 50, self.update_aim_speed, 40, "")
         layout.addRow("Aim Speed:", aim_speed_widget)
         
 
@@ -537,15 +539,10 @@ class AimbotTab(QWidget):
 
     def on_target_found(self, move_x, move_y):
         """Called when target is found"""
-        # Send message to status bar in main application with rate limiting
+        # Send message to status bar in main application
         if hasattr(self.parent_app, 'statusBar'):
-            # Sadece her 100ms'de bir güncelle
-            import time
-            current_time = time.time()
-            if not hasattr(self, '_last_status_update') or current_time - self._last_status_update > 0.1:
-                self.parent_app.statusBar.showMessage(f"Target found: {move_x}, {move_y}", 500)
-                self._last_status_update = current_time
-
+            self.parent_app.statusBar.showMessage(f"Target found: {move_x}, {move_y}", 500)
+    
     def load_settings(self, settings):
         """Load settings from config - COMPREHENSIVE VERSION"""
         try:
@@ -592,9 +589,9 @@ class AimbotTab(QWidget):
                 self.size_y_slider.setValue(size_y)
                 print(f"🎯 Indicator size X: {size_x}, Y: {size_y}")
             else:
-                print("⚠️ indicator_size not found in settings, using default: X=60, Y=13")
-                self.size_x_slider.setValue(60)
-                self.size_y_slider.setValue(13)
+                print("⚠️ indicator_size not found in settings, using default: X=80, Y=15")
+                self.size_x_slider.setValue(80)
+                self.size_y_slider.setValue(15)
             
             # Backward compatibility - ignore old settings
             # thickness, opacity, filled are no longer used
