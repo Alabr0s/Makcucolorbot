@@ -10,6 +10,12 @@ Thanks for the video, KainX
 
 # Update Notes:
 
+*Version 1.3*
+- Added 'tcp_nodelay' to the TCP connection protocol
+- Added 3 preset weapon configs to the Triggerbot page (Sheriff, Vandal, Ghost)
+- Added a spectrum to the Color page for adjustments
+Note: This is a minor update intended to fix aim speed jitter issues and improve ease of use.
+
 *Version 1.2*
 - Freezing issue on the Aimbot page resolved
 - Queue added to the TCP client (for optimization)
@@ -96,3 +102,4 @@ Communication between the computers is handled through a custom TCP protocol on 
 
 
 This is a defendingstore.com project.
+
