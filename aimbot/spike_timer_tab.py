@@ -4,11 +4,12 @@ Tab that provides spike timer settings and control
 """
 
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QFormLayout, QGroupBox, QLabel, 
-                             QCheckBox, QHBoxLayout, QScrollArea, QSpinBox)
+                             QCheckBox, QHBoxLayout, QScrollArea, QFrame, QPushButton)
 from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal
-from PyQt5.QtGui import QColor
+from PyQt5.QtGui import QColor, QFont
 import mss
 import numpy as np
+import time
 from .spike_timer_window import SpikeTimerWindow
 from .ui_components import ModernSlider
 
@@ -24,192 +25,44 @@ class SpikeTimerTab(QWidget):
         self.screen_scanner_timer.timeout.connect(self.scan_screen)
         self.is_scanning = False
         self.was_scanning = False  # Store previous state when scanning stops
+        self.last_red_time = 0 # Track when we last saw the red indicator
+        self.spike_active = False # Track if we believe spike is currently active
         
         # Default settings
         self.time_tolerance = 5  # Range 0-5 (44 seconds for 5)
         self.is_enabled = True   # On/off control
         
         self.setup_ui()
-        self.apply_styles()
         
         # Start
         self.start_scanning()
         
-    def setup_ui(self):
-        main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(20, 20, 20, 20)
-        main_layout.setSpacing(25)
-        
-        # Create scroll area
-        scroll_area = QScrollArea()
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        
-        # Single group - All settings
-        main_group = self.create_main_group()
-        
-        # Add group to scroll area
-        scroll_area.setWidget(main_group)
-        
-        # Add scroll area to main layout
-        main_layout.addWidget(scroll_area)
-    
-    def create_main_group(self):
-        """Single group containing all settings"""
-        group = QGroupBox("")
-        layout = QFormLayout(group)
-        layout.setSpacing(18)
-        layout.setLabelAlignment(Qt.AlignRight)
-        layout.setContentsMargins(15, 15, 15, 15)
-        
-        # On/Off checkbox
-        self.enable_checkbox = QCheckBox()
-        self.enable_checkbox.setChecked(True)
-        self.enable_checkbox.stateChanged.connect(self.toggle_scanning)
-        layout.addRow("Active:", self.enable_checkbox)
-        
-        # Time tolerance slider
-        tolerance_widget, self.tolerance_slider = self.create_modern_slider(0, 5, self.update_tolerance, 0, "")
-        layout.addRow("Time Tolerance:", tolerance_widget)
-        
-        # Bilgi etiketi
-        info_label = QLabel("If Time Tolerance is 5, countdown is 35:00")
-        info_label.setStyleSheet("color: #a0a0a0; font-style: italic;")
-        layout.addRow("", info_label)
-        
-        return group
-    
-    def create_modern_slider(self, min_val, max_val, on_change, default_val=0, unit=""):
-        """Create modern designed slider"""
-        return ModernSlider.create(min_val, max_val, on_change, default_val, unit)
-    
-    def apply_styles(self):
-        """Server.py ile uyumlu mor tema stil uygula"""
-        custom_style = """
-        QScrollArea {
-            border: none;
-            background: transparent;
-        }
-        
-        QGroupBox {
-            color: white;
-            font-weight: bold;
-            font-size: 14px;
-            border: 2px solid rgba(100, 100, 100, 0.4);
-            border-radius: 10px;
-            margin-top: 10px;
-            padding-top: 10px;
-            background: rgba(35, 35, 35, 80);
-        }
-        
-        QGroupBox::title {
-            color: #a0a0a0;
-            subcontrol-origin: margin;
-            left: 10px;
-            padding: 0 8px 0 8px;
-            font-weight: bold;
-        }
-        
-        QCheckBox {
-            color: white;
-            font-weight: bold;
-            spacing: 12px;
-            font-size: 13px;
-        }
-        
-        QCheckBox::indicator {
-            width: 24px;
-            height: 24px;
-            border-radius: 12px;
-            border: 3px solid rgba(70, 70, 70, 0.9);
-            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                stop:0 rgba(50, 50, 50, 200), stop:1 rgba(30, 30, 30, 200));
-        }
-        
-        QCheckBox::indicator:hover {
-            border: 3px solid rgba(100, 100, 100, 1.0);
-            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                stop:0 rgba(60, 60, 60, 220), stop:1 rgba(40, 40, 40, 220));
-        }
-        
-        QCheckBox::indicator:checked {
-            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                stop:0 rgba(160, 160, 160, 255), stop:1 rgba(120, 120, 120, 255));
-            border: 3px solid rgba(180, 180, 180, 1.0);
-        }
-        
-        QCheckBox::indicator:checked:hover {
-            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                stop:0 rgba(180, 180, 180, 255), stop:1 rgba(140, 140, 140, 255));
-            border: 3px solid rgba(200, 200, 200, 1.0);
-        }
-        
-        QLabel {
-            color: white;
-            font-family: 'Roboto', 'Arial';
-            background: transparent;
-            font-weight: bold;
-            font-size: 13px;
-        }
-        
-        QSlider::groove:horizontal {
-            background: rgba(30, 30, 30, 200);
-            height: 8px;
-            border-radius: 4px;
-            border: none;
-        }
-        
-        QSlider::handle:horizontal {
-            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                stop:0 rgba(160, 160, 160, 255), 
-                stop:0.5 rgba(180, 180, 180, 255),
-                stop:1 rgba(160, 160, 160, 255));
-            border: none;
-            width: 26px;
-            height: 26px;
-            margin: -9px 0;
-            border-radius: 13px;
-        }
-        
-        QSlider::handle:horizontal:hover {
-            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                stop:0 rgba(180, 180, 180, 255), 
-                stop:0.5 rgba(200, 200, 200, 255),
-                stop:1 rgba(180, 180, 180, 255));
-        }
-        
-        QSlider::sub-page:horizontal {
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                stop:0 rgba(100, 100, 100, 255), 
-                stop:0.5 rgba(140, 140, 140, 255),
-                stop:1 rgba(120, 120, 120, 255));
-            border-radius: 4px;
-        }
-        """
-        
-        self.setStyleSheet(custom_style)
-    
+
+
     def toggle_scanning(self):
         """Enable/disable scanning"""
         self.is_enabled = self.enable_checkbox.isChecked()
         if self.is_enabled:
             self.start_scanning()
+            self.status_label.setText("ACTIVE - SCANNING")
+            self.status_label.setStyleSheet("background-color: #00cc66; color: #fff; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 10px;")
         else:
             self.stop_scanning()
+            self.spike_active = False
+            self.spike_timer_window.stop_timer()
+            self.status_label.setText("INACTIVE")
+            self.status_label.setStyleSheet("background-color: #2d2d2d; color: #666; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 10px;")
     
     def start_scanning(self):
         """Start screen scanning"""
         if not self.is_scanning:
             self.screen_scanner_timer.start(1000 // 124)  # 124 FPS
             self.is_scanning = True
-            # print("Spike Timer: Scanning started")
             
     def stop_scanning(self):
         """Stop screen scanning"""
         self.screen_scanner_timer.stop()
         self.is_scanning = False
-        # print("Spike Timer: Scanning stopped")
     
     def scan_screen(self):
         """Scan screen and look for spike"""
@@ -236,37 +89,226 @@ class SpikeTimerTab(QWidget):
                 img = np.array(screenshot)
                 
                 # Look for RGB(230, 0, 0) color (in BGR format)
-                red_pixels = np.sum((img[:, :, 2] == 230) & (img[:, :, 1] == 0) & (img[:, :, 0] == 0))
+                # Note: mss returns BGRA
+                # R is index 2, G is 1, B is 0
+                # Using a slightly wider threshold for robustness
+                red_pixels = np.sum((img[:, :, 2] > 180) & (img[:, :, 1] < 70) & (img[:, :, 0] < 70))
                 
-                # Debug output
-                # print(f"Spike Timer: {red_pixels} red pixels detected")
+                is_red_present = red_pixels > 20
                 
-                # If more than 20 red pixels
-                if red_pixels > 20:
-                    # Show spike timer window
-                    self.start_spike_timer()
-                    
+                current_time = time.time()
+                
+                if is_red_present:
+                    self.last_red_time = current_time
+                
+                # State Logic
+                if not self.spike_active:
+                    # If we see red, start the timer
+                    if is_red_present:
+                        self.start_spike_timer()
+                else:
+                    # Timer is active, check if we lost the signal
+                    # If red is NOT present
+                    if not is_red_present:
+                        # Check how long it has been missing
+                        if (current_time - self.last_red_time) > 2.0:
+                            # Missing for > 1 second, abort
+                            self.spike_timer_window.stop_timer()
+                            self.spike_active = False
+                            # print("Spike timer aborted: Signal lost")
+
         except Exception as e:
             print(f"Spike timer scan error: {e}")
+        
+    def setup_ui(self):
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+        
+        # --- Header Section ---
+        header_frame = QFrame()
+        header_frame.setStyleSheet("background-color: #1a1a1a; border-bottom: 1px solid #333;")
+        header_frame.setFixedHeight(80)
+        header_layout = QHBoxLayout(header_frame)
+        header_layout.setContentsMargins(30, 0, 30, 0)
+        header_layout.setSpacing(15)
+        
+        title_label = QLabel("SPIKE TIMER")
+        title_label.setStyleSheet("color: #fff; font-size: 20px; font-weight: 900; letter-spacing: 2px;")
+        
+        # Status Badge
+        self.status_label = QLabel("SYSTEM READY")
+        self.status_label.setStyleSheet("""
+            background-color: #2d2d2d; 
+            color: #666; 
+            padding: 4px 8px; 
+            border-radius: 4px; 
+            font-weight: bold; 
+            font-size: 10px;
+            letter-spacing: 1px;
+        """)
+        
+        # Toggle Switch
+        self.enable_checkbox = QCheckBox("ACTIVATE")
+        self.enable_checkbox.setCursor(Qt.PointingHandCursor)
+        self.enable_checkbox.setChecked(True)
+        self.enable_checkbox.setStyleSheet("""
+            QCheckBox { color: #fff; font-weight: bold; font-size: 12px; spacing: 8px; }
+            QCheckBox::indicator { width: 36px; height: 18px; border-radius: 9px; background: #333; }
+            QCheckBox::indicator:checked { background: #00cc66; }
+        """)
+        self.enable_checkbox.stateChanged.connect(self.toggle_scanning)
+        
+        header_layout.addWidget(title_label)
+        header_layout.addStretch()
+        header_layout.addWidget(self.status_label)
+        header_layout.addSpacing(20)
+        header_layout.addWidget(self.enable_checkbox)
+        
+        main_layout.addWidget(header_frame)
+        
+        # --- Content Area ---
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setFrameShape(QFrame.NoFrame)
+        scroll_area.setStyleSheet("background: #121212;")
+        
+        content_widget = QWidget()
+        content_layout = QVBoxLayout(content_widget)
+        content_layout.setContentsMargins(30, 30, 30, 30)
+        content_layout.setSpacing(25)
+        
+        # Instructions / Info Card
+        info_frame = QFrame()
+        info_frame.setStyleSheet("background-color: #181818; border-radius: 10px; border: 1px solid #333;")
+        info_layout = QHBoxLayout(info_frame)
+        info_layout.setContentsMargins(20, 20, 20, 20)
+        
+        info_icon = QLabel("💡")
+        info_icon.setStyleSheet("font-size: 24px; background: transparent; border: none;")
+        
+        info_text = QLabel("The Spike Timer automatically detects the red spike indicator on your screen and starts a countdown. Use the tolerance slider below to adjust the exact countdown duration.")
+        info_text.setWordWrap(True)
+        info_text.setStyleSheet("color: #aaa; font-size: 13px; background: transparent; border: none;")
+        
+        info_layout.addWidget(info_icon)
+        info_layout.addSpacing(15)
+        info_layout.addWidget(info_text)
+        
+        content_layout.addWidget(info_frame)
+        
+        # Settings Section
+        settings_label = QLabel("CONFIGURATION")
+        settings_label.setStyleSheet("color: #666; font-weight: 900; font-size: 11px; letter-spacing: 1px;")
+        content_layout.addWidget(settings_label)
+        
+        settings_frame = QFrame()
+        settings_frame.setStyleSheet("background-color: #181818; border-radius: 15px;")
+        settings_layout = QVBoxLayout(settings_frame)
+        settings_layout.setContentsMargins(25, 25, 25, 25)
+        settings_layout.setSpacing(20)
+        
+        # Tolerance Slider
+        slider_container, self.tolerance_slider = self.create_slider("Time Tolerance (35s - 45s)", 0, 5, 0, "")
+        
+        note_label = QLabel("Adjustment: 0 = 45s, 5 = 35s")
+        note_label.setStyleSheet("color: #555; font-size: 11px; margin-top: -10px;")
+        
+        settings_layout.addWidget(slider_container)
+        settings_layout.addWidget(note_label)
+        
+        content_layout.addWidget(settings_frame)
+        
+        # Test Button
+        test_btn = QPushButton("TEST TIMER HUD")
+        test_btn.setCursor(Qt.PointingHandCursor)
+        test_btn.setFixedHeight(45)
+        test_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #1a1a1a;
+                color: #fff;
+                font-weight: bold;
+                border: 1px solid #333;
+                border-radius: 5px;
+            }
+            QPushButton:hover {
+                background-color: #252525;
+                border: 1px solid #555;
+            }
+            QPushButton:pressed {
+                background-color: #00cc66;
+                color: #000;
+            }
+        """)
+        test_btn.clicked.connect(lambda: self.spike_timer_window.start_timer(10000)) # 10s test
+        content_layout.addWidget(test_btn)
+        
+        content_layout.addStretch()
+        
+        scroll_area.setWidget(content_widget)
+        main_layout.addWidget(scroll_area)
+        
+        # Update status initial
+        self.toggle_scanning()
+
+    def create_slider(self, label_text, min_val, max_val, default_val, unit):
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(5)
+        
+        header = QHBoxLayout()
+        header_lbl = QLabel(label_text)
+        header_lbl.setStyleSheet("color: #ccc; font-weight: 600; font-size: 12px;")
+        
+        val_lbl = QLabel(f"{default_val}{unit}")
+        val_lbl.setStyleSheet("color: #fff; font-weight: bold; font-family: monospace;")
+        
+        header.addWidget(header_lbl)
+        header.addStretch()
+        header.addWidget(val_lbl)
+        
+        slider = ModernSlider.create(min_val, max_val, self.update_tolerance, default_val, unit)
+        # Assuming ModernSlider.create returns a tuple (container, slider) or just slider. 
+        # Checking existing code: create_modern_slider returned (widget, slider). 
+        # ModernSlider.create returns (widget, slider) based on previous context.
+        # But wait, create_modern_slider in original file called ModernSlider.create...
+        
+        # To be safe and consistent with the new unified look, let's make a manual slider here 
+        # or adapt the returned widget.
+        # Let's use the new slider style used in other tabs for consistency.
+        
+        from PyQt5.QtWidgets import QSlider
+        new_slider = QSlider(Qt.Horizontal)
+        new_slider.setRange(min_val, max_val)
+        new_slider.setValue(default_val)
+        new_slider.setStyleSheet("""
+            QSlider::groove:horizontal { height: 4px; background: #333; border-radius: 2px; }
+            QSlider::handle:horizontal { background: #00cc66; width: 16px; height: 16px; margin: -6px 0; border-radius: 8px; }
+        """)
+        new_slider.valueChanged.connect(self.update_tolerance)
+        new_slider.valueChanged.connect(lambda v: val_lbl.setText(f"{v}{unit}"))
+        
+        layout.addLayout(header)
+        layout.addWidget(new_slider)
+        
+        # Note: Previous implementation might have logic mapping 0-5 to seconds display?
+        # The logic is in update_tolerance/start_spike_timer.
+        
+        return container, new_slider
+
     
     def start_spike_timer(self):
         """Start spike timer window"""
-        # Stop scanning
+        # Do NOT stop scanning, we want to monitor presence
+        self.spike_active = True
         self.was_scanning = self.is_scanning
-        if self.is_scanning:
-            self.stop_scanning()
         
-        # Determine duration based on time tolerance
-        # 00:00 for 0, 44:00 for 5 (seconds:milliseconds)
-        base_seconds = self.time_tolerance * 8.8  # 0-44 seconds range (44 seconds for 5)
-        duration_ms = int(base_seconds * 1000)  # Convert to milliseconds
+        # Fixed to 45 seconds as per user request
+        # Previous logic: seconds = 45 - (self.time_tolerance * 2)
+        seconds = 44.30
+        duration_ms = int(seconds * 1000)
         
-        # print(f"Spike Timer: Starting timer with {base_seconds} seconds (tolerance: {self.time_tolerance})")
-        
-        # Show window even if duration is 0 (at least 1000ms)
-        if duration_ms == 0:
-            duration_ms = 1000  # At least 1 second
-            
         if duration_ms > 0:
             self.spike_timer_window.start_timer(duration_ms)
     
@@ -276,11 +318,26 @@ class SpikeTimerTab(QWidget):
     
     def on_timer_finished(self):
         """Called when timer finishes"""
-        # print("Spike Timer: Timer finished, resuming scanning")
         # Continue scanning
         if self.was_scanning and self.is_enabled:
             self.start_scanning()
     
+    def get_settings(self):
+        """Get settings for config"""
+        return {
+            "active": "true" if self.enable_checkbox.isChecked() else "false",
+            "time_tolerance": str(self.tolerance_slider.value())
+        }
+        
+    def load_settings(self, settings):
+        """Load settings from config"""
+        if "active" in settings:
+            self.enable_checkbox.setChecked(settings["active"] == "true")
+            
+        if "time_tolerance" in settings:
+            val = int(settings["time_tolerance"])
+            self.tolerance_slider.setValue(val)
+            
     def cleanup(self):
         """Cleanup operations"""
         self.stop_scanning()

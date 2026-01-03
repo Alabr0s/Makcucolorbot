@@ -5,15 +5,19 @@ Detects left mouse button press/release events
 
 import time
 import threading
+import ctypes
 from PyQt5.QtCore import QThread, pyqtSignal
 
+# Try importing win32api, otherwise fallback to ctypes
 try:
     import win32api
     import win32con
-    WINDOWS_AVAILABLE = True
+    USE_WIN32 = True
+    VK_LBUTTON = win32con.VK_LBUTTON
 except ImportError:
-    print("Warning: win32api not available, RCS mouse detection disabled")
-    WINDOWS_AVAILABLE = False
+    # print("Warning: win32api not available, falling back to ctypes")
+    USE_WIN32 = False
+    VK_LBUTTON = 0x01
 
 class MouseEventDetector(QThread):
     """Detects mouse events for RCS system"""
@@ -26,16 +30,21 @@ class MouseEventDetector(QThread):
         
     def run(self):
         """Main thread loop for mouse detection"""
-        if not WINDOWS_AVAILABLE:
-            return
-            
         self.running = True
         
         while self.running:
             try:
-                # Check left mouse button state
-                left_state = win32api.GetAsyncKeyState(win32con.VK_LBUTTON)
-                is_pressed = (left_state & 0x8000) != 0
+                is_pressed = False
+                
+                if USE_WIN32:
+                    # Check left mouse button state using pywin32
+                    left_state = win32api.GetAsyncKeyState(VK_LBUTTON)
+                    is_pressed = (left_state & 0x8000) != 0
+                else:
+                    # Fallback using ctypes
+                    # GetGetAsyncKeyState returns a short, high bit indicates pressed
+                    state = ctypes.windll.user32.GetAsyncKeyState(VK_LBUTTON)
+                    is_pressed = (state & 0x8000) != 0
                 
                 # Detect state changes
                 if is_pressed and not self.left_button_pressed:

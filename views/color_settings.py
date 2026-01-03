@@ -1,10 +1,15 @@
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QFormLayout, QGroupBox, QSlider, 
-                             QHBoxLayout, QLabel, QPushButton)
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QPainter, QColor, QPen, QBrush
+                             QHBoxLayout, QLabel, QPushButton, QFileDialog, QInputDialog, 
+                             QMessageBox, QSplitter, QFrame, QScrollArea, QMenu, QAction)
+from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtGui import QPainter, QColor, QPen, QBrush, QImage, QPixmap, QPainterPath
 from controllers.theme_controller import WindowColorManager
 from models.color_palette import ColorTheme
 import colorsys
+import cv2
+import numpy as np
+import json
+import os
 
 
 class ColorSpectrumWidget(QWidget):
@@ -120,78 +125,496 @@ class ColorPreviewWidget(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         
-        # Background
-        painter.fillRect(self.rect(), QColor(40, 40, 40, 200))
+        # Background with grid effect for better contrast
+        bg_color = QColor(30, 30, 30)
+        painter.fillRect(self.rect(), bg_color)
+        
+        # Draw subtle grid
+        painter.setPen(QPen(QColor(255, 255, 255, 10), 1))
+        grid_size = 20
+        for x in range(0, self.width(), grid_size):
+            painter.drawLine(x, 0, x, self.height())
+        for y in range(0, self.height(), grid_size):
+            painter.drawLine(0, y, self.width(), y)
         
         # Get preview color
         color = self.get_preview_color()
         
-        # Draw human figure
-        center_x = self.width() // 2
-        center_y = self.height() // 2
+        # Determine center
+        cx = self.width() // 2
+        cy = self.height() // 2 + 20
+        scale = 1.2  # Scale up the character
         
-        # Head
-        head_radius = 40
+        painter.translate(cx, cy)
+        painter.scale(scale, scale)
+        painter.translate(-cx, -cy)
+
+        # Create tactical operator path
+        path = QPainterPath()
+        
+        # Head (Helmet shape)
+        path.addEllipse(cx - 25, cy - 140, 50, 55) # Base head
+        
+        # Body armor / Chest
+        path.moveTo(cx - 30, cy - 90)
+        path.lineTo(cx + 30, cy - 90)  # Shoulders
+        path.lineTo(cx + 45, cy - 20)  # Chest sides
+        path.lineTo(cx + 35, cy + 50)  # Waist
+        path.lineTo(cx - 35, cy + 50)
+        path.lineTo(cx - 45, cy - 20)
+        path.closeSubpath()
+        
+        # Arms (Holding a weapon stance)
+        # Left Arm
+        path.moveTo(cx - 45, cy - 80)
+        path.lineTo(cx - 70, cy - 20)  # Elbow
+        path.lineTo(cx - 40, cy + 10)  # Hand
+        path.lineTo(cx - 30, cy - 10)
+        path.lineTo(cx - 38, cy - 75)
+        path.closeSubpath()
+        
+        # Right Arm
+        path.moveTo(cx + 45, cy - 80)
+        path.lineTo(cx + 70, cy - 20)
+        path.lineTo(cx + 40, cy + 10)
+        path.lineTo(cx + 30, cy - 10)
+        path.lineTo(cx + 38, cy - 75)
+        path.closeSubpath()
+        
+        # Legs (Combat pants)
+        # Left Leg
+        path.moveTo(cx - 35, cy + 50)
+        path.lineTo(cx - 45, cy + 140)
+        path.lineTo(cx - 15, cy + 140)
+        path.lineTo(cx - 5, cy + 60)
+        path.closeSubpath()
+        
+        # Right Leg
+        path.moveTo(cx + 35, cy + 50)
+        path.lineTo(cx + 45, cy + 140)
+        path.lineTo(cx + 15, cy + 140)
+        path.lineTo(cx + 5, cy + 60)
+        path.closeSubpath()
+
+        # Fill with main color
+        glow = QColor(color)
+        glow.setAlpha(100)
+        painter.setBrush(Qt.NoBrush)
+        painter.setPen(QPen(glow, 8))
+        painter.drawPath(path) # Glow effect
+        
+        painter.setBrush(QBrush(color.darker(150))) # Darker inner fill
+        painter.setPen(QPen(color, 3)) # Bright outline
+        painter.drawPath(path)
+        
+        # Draw "Headshot" zone highlight (The most important part)
         painter.setBrush(QBrush(color))
-        painter.setPen(QPen(color.darker(120), 3))
-        painter.drawEllipse(center_x - head_radius, center_y - 120, head_radius * 2, head_radius * 2)
+        painter.setPen(Qt.NoPen)
+        painter.drawEllipse(cx - 20, cy - 135, 40, 40) # Inner face/visor glow
         
-        # Body
-        body_width = 80
-        body_height = 120
-        painter.drawRoundedRect(
-            center_x - body_width // 2, 
-            center_y - 60, 
-            body_width, 
-            body_height,
-            10, 10
-        )
+        # Draw a simple weapon silhouette
+        w_path = QPainterPath()
+        w_path.moveTo(cx - 40, cy + 5)
+        w_path.lineTo(cx + 40, cy + 5)
+        w_path.lineTo(cx + 40, cy + 25)
+        w_path.lineTo(cx - 10, cy + 25)
+        w_path.lineTo(cx - 15, cy + 40) # Grip
+        w_path.lineTo(cx - 25, cy + 40)
+        w_path.lineTo(cx - 30, cy + 25)
+        w_path.lineTo(cx - 40, cy + 25)
+        w_path.closeSubpath()
         
-        # Left arm
-        arm_width = 25
-        arm_length = 100
-        painter.drawRoundedRect(
-            center_x - body_width // 2 - arm_width - 5,
-            center_y - 50,
-            arm_width,
-            arm_length,
-            8, 8
-        )
+        painter.setBrush(QBrush(QColor(20, 20, 20)))
+        painter.setPen(QPen(QColor(100, 100, 100), 1))
+        painter.drawPath(w_path)
         
-        # Right arm
-        painter.drawRoundedRect(
-            center_x + body_width // 2 + 5,
-            center_y - 50,
-            arm_width,
-            arm_length,
-            8, 8
-        )
+        # Reset transform for text
+        painter.resetTransform()
         
-        # Left leg
-        leg_width = 30
-        leg_length = 110
-        painter.drawRoundedRect(
-            center_x - leg_width - 5,
-            center_y + 60,
-            leg_width,
-            leg_length,
-            8, 8
-        )
-        
-        # Right leg
-        painter.drawRoundedRect(
-            center_x + 5,
-            center_y + 60,
-            leg_width,
-            leg_length,
-            8, 8
-        )
-        
-        # Color info text (OpenCV values and degree equivalents)
+        # Color info text overlay
         painter.setPen(QPen(QColor(255, 255, 255), 2))
-        painter.drawText(10, 30, f"Hue: {self.hue_min:.0f}-{self.hue_max:.0f} ({self.hue_min*2:.0f}°-{self.hue_max*2:.0f}°)")
-        painter.drawText(10, 50, f"Sat: {self.sat_min:.2f} - {self.sat_max:.2f}")
-        painter.drawText(10, 70, f"Val: {self.val_min:.0f} - {self.val_max:.0f}")
+        font = painter.font()
+        font.setBold(True)
+        font.setPointSize(10)
+        painter.setFont(font)
+        
+        margin = 15
+        line_height = 20
+        y_pos = margin + 15
+        
+        # Helper to draw text with shadow
+        def draw_shadowed_text(x, y, text):
+            painter.setPen(QColor(0, 0, 0, 200))
+            painter.drawText(x+1, y+1, text)
+            painter.setPen(QColor(255, 255, 255))
+            painter.drawText(x, y, text)
+
+        draw_shadowed_text(margin, y_pos, f"HSV: [{self.hue_min:.0f}-{self.hue_max:.0f}, {self.sat_min:.2f}-{self.sat_max:.2f}, {self.val_min:.0f}-{self.val_max:.0f}]")
+        y_pos += line_height
+        
+        # Show Color Hex Code
+        draw_shadowed_text(margin, y_pos, f"RGB: {color.name().upper()}")
+
+
+class HSVToolWindow(QWidget):
+    """Separate window for fine-tuning HSV values on a real image"""
+    
+    settings_saved = pyqtSignal()
+    
+    def __init__(self, parent=None):
+        super().__init__(parent, Qt.Window) # Fix: Parent + Window flag prevents app exit
+        self.setWindowTitle("HSV Tuning Tool")
+        self.resize(1100, 750)
+        self.image = None
+        self.processed_image = None
+        self.original_pixmap = None
+        
+        # Default HSV values
+        self.h_min = 0
+        self.h_max = 180
+        self.s_min = 0
+        self.s_max = 255  
+        self.v_min = 0
+        self.v_max = 255
+        
+        self.setup_ui()
+        self.apply_styles()
+        
+    def setup_ui(self):
+        # Main Layout
+        main_layout = QHBoxLayout(self)
+        main_layout.setContentsMargins(20, 20, 20, 20)
+        main_layout.setSpacing(20)
+        
+        # --- Left Panel: Controls ---
+        left_card = QFrame()
+        left_card.setObjectName("controlPanel")
+        left_layout = QVBoxLayout(left_card)
+        left_layout.setContentsMargins(20, 20, 20, 20)
+        left_layout.setSpacing(20)
+        
+        # Title
+        title = QLabel("TUNING CONTROLS")
+        title.setObjectName("sectionTitle")
+        left_layout.addWidget(title)
+        
+        # Image Load Section
+        img_layout = QHBoxLayout()
+        load_btn = QPushButton("LOAD IMAGE")
+        load_btn.setCursor(Qt.PointingHandCursor)
+        load_btn.setObjectName("actionBtn")
+        load_btn.clicked.connect(self.load_image)
+        img_layout.addWidget(load_btn)
+        left_layout.addLayout(img_layout)
+        
+        # Presets
+        presets_label = QLabel("QUICK PRESETS")
+        presets_label.setObjectName("subTitle")
+        left_layout.addWidget(presets_label)
+        
+        presets_layout = QHBoxLayout()
+        presets_layout.setSpacing(10)
+        for name, color in [("Purple", "#805ad5"), ("Red", "#e53e3e"), ("Yellow", "#ecc94b")]:
+            btn = QPushButton(name)
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: {color};
+                    color: white;
+                    border: none;
+                    border-radius: 6px;
+                    padding: 8px;
+                    font-weight: bold;
+                    min-width: 60px;
+                }}
+                QPushButton:hover {{ background-color: {color}DD; }}
+            """)
+            btn.clicked.connect(lambda checked, n=name: self.apply_base_preset(n))
+            presets_layout.addWidget(btn)
+        left_layout.addLayout(presets_layout)
+        
+        # Sliders Section
+        sliders_scroll = QScrollArea()
+        sliders_scroll.setWidgetResizable(True)
+        sliders_scroll.setFrameShape(QFrame.NoFrame)
+        sliders_scroll.setStyleSheet("background: transparent;")
+        
+        sliders_content = QWidget()
+        sliders_content.setStyleSheet("background: transparent;")
+        sliders_layout = QVBoxLayout(sliders_content)
+        sliders_layout.setSpacing(15)
+        
+        self.sliders = {}
+        slider_configs = [
+            ("Hue Min", 0, 180, "h_min", 1),
+            ("Hue Max", 0, 180, "h_max", 1),
+            ("Sat Min", 0, 255, "s_min", 255.0),
+            ("Sat Max", 0, 255, "s_max", 255.0),
+            ("Val Min", 0, 255, "v_min", 255.0),
+            ("Val Max", 0, 255, "v_max", 255.0)
+        ]
+        
+        for label, min_v, max_v, key, divisor in slider_configs:
+            # Container
+            container = QFrame()
+            container.setStyleSheet("background: #252525; border-radius: 8px; padding: 5px;")
+            v_layout = QVBoxLayout(container)
+            v_layout.setContentsMargins(10, 5, 10, 5)
+            v_layout.setSpacing(5)
+            
+            # Header
+            h_row = QHBoxLayout()
+            lbl = QLabel(label)
+            lbl.setStyleSheet("color: #aaa; font-size: 11px; font-weight: bold;")
+            
+            val_lbl = QLabel()
+            val_lbl.setStyleSheet("color: #00cc66; font-weight: bold; font-family: monospace;")
+            
+            h_row.addWidget(lbl)
+            h_row.addStretch()
+            h_row.addWidget(val_lbl)
+            v_layout.addLayout(h_row)
+            
+            # Slider
+            slider = QSlider(Qt.Horizontal)
+            slider.setRange(min_v, max_v)
+            slider.setValue(getattr(self, key))
+            
+            # Initial text
+            val = slider.value()
+            if divisor != 1:
+                val_lbl.setText(f"{val/divisor:.2f}")
+            else:
+                val_lbl.setText(str(val))
+                
+            slider.valueChanged.connect(lambda v, k=key, l=val_lbl, d=divisor: self.update_val(k, v, l, d))
+            self.sliders[key] = slider
+            v_layout.addWidget(slider)
+            
+            sliders_layout.addWidget(container)
+            
+        sliders_scroll.setWidget(sliders_content)
+        left_layout.addWidget(sliders_scroll)
+        
+        # Save Button
+        save_btn = QPushButton("SAVE CONFIGURATION")
+        save_btn.setObjectName("saveBtn")
+        save_btn.setCursor(Qt.PointingHandCursor)
+        save_btn.clicked.connect(self.save_preset)
+        left_layout.addWidget(save_btn)
+        
+        # --- Right Panel: Preview ---
+        right_panel = QFrame()
+        right_panel.setObjectName("previewPanel")
+        right_layout = QVBoxLayout(right_panel)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(0)
+        
+        # Splitter
+        splitter = QSplitter(Qt.Horizontal)
+        splitter.setStyleSheet("""
+            QSplitter::handle { background: #333; width: 2px; }
+        """)
+        
+        self.orig_lbl = QLabel("No Image Loaded")
+        self.orig_lbl.setAlignment(Qt.AlignCenter)
+        self.orig_lbl.setStyleSheet("color: #555; font-weight: bold;")
+        
+        self.proc_lbl = QLabel("Result Preview")
+        self.proc_lbl.setAlignment(Qt.AlignCenter)
+        self.proc_lbl.setStyleSheet("color: #555; font-weight: bold;")
+        
+        orig_container = QFrame()
+        orig_container.setStyleSheet("background: #151515;")
+        QVBoxLayout(orig_container).addWidget(self.orig_lbl)
+        
+        proc_container = QFrame()
+        proc_container.setStyleSheet("background: #151515;")
+        QVBoxLayout(proc_container).addWidget(self.proc_lbl)
+        
+        splitter.addWidget(orig_container)
+        splitter.addWidget(proc_container)
+        splitter.setSizes([450, 450])
+        
+        right_layout.addWidget(splitter)
+        
+        # Add panels to Main
+        # Left panel fixed width
+        left_card.setFixedWidth(320)
+        main_layout.addWidget(left_card)
+        main_layout.addWidget(right_panel, stretch=1)
+        
+    def apply_styles(self):
+        self.setStyleSheet("""
+            QWidget { 
+                background-color: #121212; 
+                font-family: 'Segoe UI', sans-serif;
+            }
+            QFrame#controlPanel {
+                background-color: #1a1a1a;
+                border: 1px solid #2d2d2d;
+                border-radius: 12px;
+            }
+            QFrame#previewPanel {
+                border: 1px solid #2d2d2d;
+                border-radius: 12px;
+                overflow: hidden;
+            }
+            QLabel#sectionTitle {
+                color: #fff;
+                font-size: 16px;
+                font-weight: 900;
+                letter-spacing: 1px;
+                margin-bottom: 10px;
+            }
+            QLabel#subTitle {
+                color: #666;
+                font-size: 11px;
+                font-weight: bold;
+                letter-spacing: 1px;
+                margin-top: 10px;
+            }
+            QPushButton#actionBtn {
+                background-color: #252525;
+                color: #fff;
+                border: 1px solid #333;
+                border-radius: 6px;
+                padding: 10px;
+                font-weight: bold;
+            }
+            QPushButton#actionBtn:hover {
+                background-color: #333;
+                border: 1px solid #555;
+            }
+            QPushButton#saveBtn {
+                background-color: #00cc66;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                padding: 12px;
+                font-weight: 900;
+                font-size: 12px;
+                letter-spacing: 1px;
+            }
+            QPushButton#saveBtn:hover {
+                background-color: #00dd77;
+            }
+            QSlider::groove:horizontal {
+                height: 4px;
+                background: #1a1a1a;
+                border-radius: 2px;
+            }
+            QSlider::handle:horizontal {
+                background: #00cc66;
+                width: 16px;
+                height: 16px;
+                margin: -6px 0;
+                border-radius: 8px;
+            }
+        """)
+
+    def update_val(self, key, value, label_widget, divisor):
+        setattr(self, key, value)
+        if divisor != 1:
+            label_widget.setText(f"{value/divisor:.2f}")
+        else:
+            label_widget.setText(str(value))
+        self.process_image()
+
+    def load_image(self):
+        file_path, _ = QFileDialog.getOpenFileName(self, "Select Image", "", "Images (*.png *.jpg *.jpeg *.bmp)")
+        if file_path:
+            img = cv2.imread(file_path)
+            if img is not None:
+                max_h = 600
+                h, w = img.shape[:2]
+                if h > max_h:
+                    scale = max_h / h
+                    new_w = int(w * scale)
+                    img = cv2.resize(img, (new_w, max_h))
+                
+                self.image = img
+                self.process_image()
+                
+                img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                h, w, ch = img_rgb.shape
+                bytes_per_line = ch * w
+                qimg = QImage(img_rgb.data, w, h, bytes_per_line, QImage.Format_RGB888)
+                self.orig_lbl.setPixmap(QPixmap.fromImage(qimg).scaled(
+                    self.orig_lbl.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
+
+    def process_image(self):
+        if self.image is None:
+            return
+            
+        hsv = cv2.cvtColor(self.image, cv2.COLOR_BGR2HSV)
+        lower = np.array([self.h_min, self.s_min, self.v_min])
+        upper = np.array([self.h_max, self.s_max, self.v_max])
+        mask = cv2.inRange(hsv, lower, upper)
+        res = cv2.bitwise_and(self.image, self.image, mask=mask)
+        
+        res_rgb = cv2.cvtColor(res, cv2.COLOR_BGR2RGB)
+        h, w, ch = res_rgb.shape
+        bytes_per_line = ch * w
+        qimg = QImage(res_rgb.data, w, h, bytes_per_line, QImage.Format_RGB888)
+        
+        self.proc_lbl.setPixmap(QPixmap.fromImage(qimg).scaled(
+            self.proc_lbl.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
+
+    def save_preset(self):
+        name, ok = QInputDialog.getText(self, "Save Preset", "Enter preset name:")
+        if ok and name:
+            config_dir = os.path.join(os.getenv('APPDATA'), 'ds-color')
+            os.makedirs(config_dir, exist_ok=True)
+            config_file = os.path.join(config_dir, 'config.json')
+            
+            presets = {}
+            if os.path.exists(config_file):
+                try:
+                    with open(config_file, 'r') as f:
+                        presets = json.load(f)
+                except:
+                    pass
+            
+            preset_data = {
+                "hue_min": self.h_min,
+                "hue_max": self.h_max,
+                "sat_min": int(self.s_min / 2.55),
+                "sat_max": int(self.s_max / 2.55),
+                "val_min": self.v_min,
+                "val_max": self.v_max
+            }
+            
+            presets[name] = preset_data
+            
+            with open(config_file, 'w') as f:
+                json.dump(presets, f, indent=4)
+                
+            QMessageBox.information(self, "Success", f"Preset '{name}' saved successfully!")
+            self.settings_saved.emit()
+
+    def apply_base_preset(self, name):
+        if name == "Purple":
+            self.h_min, self.h_max = 140, 150
+            self.s_min, self.s_max = 110, 194
+            self.v_min, self.v_max = 150, 255
+        elif name == "Red":
+            self.h_min, self.h_max = 0, 10
+            self.s_min, self.s_max = 179, 255
+            self.v_min, self.v_max = 180, 255
+        elif name == "Yellow":
+            self.h_min, self.h_max = 20, 30
+            self.s_min, self.s_max = 153, 255
+            self.v_min, self.v_max = 180, 255
+            
+        for key in self.sliders:
+            self.sliders[key].blockSignals(True)
+            self.sliders[key].setValue(getattr(self, key))
+            self.sliders[key].blockSignals(False)
+            
+        self.process_image()
+
+
 
 
 class ColorSettingsTab(QWidget):
@@ -263,173 +686,217 @@ class ColorSettingsTab(QWidget):
         return base_style % gradient
 
     def setup_ui(self):
-        # Main layout horizontal: settings on left, preview on right
+        # Main layout container
         main_layout = QHBoxLayout(self)
-        main_layout.setContentsMargins(20, 20, 20, 20)
-        main_layout.setSpacing(20)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
         
-        # Left side: Settings
-        left_widget = QWidget()
-        layout = QVBoxLayout(left_widget)
-        layout.setContentsMargins(0, 0, 0, 0)
+        # --- Hidden State Management (Compatibility) ---
+        # We keep the sliders invisible so save/load/preview logic continues to work
+        self.hidden_container = QWidget(self)
+        self.hidden_container.setVisible(False)
+        self.widgets = {}
         
-        group_box = QGroupBox("Color Settings (OpenCV HSV)")
-        form_layout = QFormLayout(group_box)
-        form_layout.setSpacing(15)
-        form_layout.setLabelAlignment(Qt.AlignRight)
+        slider_configs = [
+            ("hue_min", 0, 180), ("hue_max", 0, 180),
+            ("sat_min", 0, 100), ("sat_max", 0, 100),
+            ("val_min", 0, 255), ("val_max", 0, 255)
+        ]
         
-        # Apply styling
-        self.apply_styles()
+        default_values = {
+            "hue_min": 140, "hue_max": 150,
+            "sat_min": 43, "sat_max": 76,
+            "val_min": 150, "val_max": 255
+        }
         
-        # Color preset buttons
-        preset_group = QGroupBox("Color Presets")
-        preset_layout = QHBoxLayout(preset_group)
-        preset_layout.setSpacing(10)
+        for key, min_v, max_v in slider_configs:
+            slider = QSlider(Qt.Horizontal, self.hidden_container)
+            slider.setRange(min_v, max_v)
+            if key in default_values:
+                slider.setValue(default_values[key])
+            slider.valueChanged.connect(self.update_preview)
+            self.widgets[key] = slider
+
+        # --- Left Panel: Controls & Presets ---
+        left_panel = QFrame()
+        left_panel.setStyleSheet("background-color: #1a1a1a; border-right: 1px solid #333;")
+        left_panel.setFixedWidth(340)
+        left_layout = QVBoxLayout(left_panel)
+        left_layout.setContentsMargins(20, 25, 20, 25)
+        left_layout.setSpacing(15)
         
-        self.purple_btn = QPushButton("Purple")
-        self.red_btn = QPushButton("Red")
-        self.yellow_btn = QPushButton("Yellow")
+        # Header
+        header = QLabel("COLOR CONFIG")
+        header.setStyleSheet("color: #555; font-weight: 900; font-size: 12px; letter-spacing: 3px;")
+        left_layout.addWidget(header)
         
-        # Style the preset buttons (gray)
-        button_style = """
-            QPushButton {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 rgba(90, 90, 90, 120), stop:1 rgba(70, 70, 70, 120));
-                border: 1px solid rgba(110, 110, 110, 0.6);
+        # Editor Action Card
+        editor_card = QFrame()
+        editor_card.setStyleSheet("""
+            QFrame {
+                background-color: #252525;
+                border: 1px solid #333;
                 border-radius: 12px;
+            }
+        """)
+        editor_layout = QVBoxLayout(editor_card)
+        editor_layout.setSpacing(10)
+        editor_layout.setContentsMargins(15, 15, 15, 15)
+        
+        edit_title = QLabel("Advanced Editor")
+        edit_title.setStyleSheet("color: white; font-size: 16px; font-weight: bold; border: none;")
+        
+        edit_desc = QLabel("Fine-tune your color extraction settings using the visual HSV tool.")
+        edit_desc.setStyleSheet("color: #888; font-size: 12px; border: none; line-height: 1.4;")
+        edit_desc.setWordWrap(True)
+        
+        self.hsv_tool_btn = QPushButton("OPEN HSV TOOL")
+        self.hsv_tool_btn.clicked.connect(self.open_hsv_tool)
+        self.hsv_tool_btn.setCursor(Qt.PointingHandCursor)
+        self.hsv_tool_btn.setFixedHeight(40)
+        self.hsv_tool_btn.setStyleSheet("""
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #0066cc, stop:1 #0099ff);
                 color: white;
                 font-weight: bold;
-                padding: 10px 20px;
-                margin: 2px;
-                min-height: 25px;
+                border-radius: 8px;
+                border: none;
+                font-size: 12px;
+                letter-spacing: 1px;
             }
             QPushButton:hover {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 rgba(110, 110, 110, 180), stop:1 rgba(90, 90, 90, 180));
-                border: 1px solid rgba(120, 120, 120, 0.8);
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #0077dd, stop:1 #00aaff);
             }
             QPushButton:pressed {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 rgba(70, 70, 70, 200), stop:1 rgba(90, 90, 90, 200));
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #0055bb, stop:1 #0088ee);
+            }
+        """)
+        
+        editor_layout.addWidget(edit_title)
+        editor_layout.addWidget(edit_desc)
+        editor_layout.addWidget(self.hsv_tool_btn)
+        left_layout.addWidget(editor_card)
+        
+        # Presets Section
+        presets_header = QLabel("PRESETS LIBRARY")
+        presets_header.setStyleSheet("color: #555; font-weight: 900; font-size: 11px; letter-spacing: 2px; margin-top: 15px;")
+        left_layout.addWidget(presets_header)
+        
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setStyleSheet("""
+            QScrollArea { background: transparent; }
+            QScrollBar:vertical {
+                background: #1a1a1a;
+                width: 6px;
+                margin: 0;
+            }
+            QScrollBar::handle:vertical {
+                background: #333;
+                min-height: 20px;
+                border-radius: 3px;
+            }
+        """)
+        
+        preset_container = QWidget()
+        preset_container.setStyleSheet("background: transparent;")
+        self.preset_layout = QVBoxLayout(preset_container)
+        self.preset_layout.setSpacing(8)
+        self.preset_layout.setContentsMargins(0, 0, 5, 0)
+        
+        # Default Presets
+        self.purple_btn = QPushButton("Purple (Enemy)")
+        self.red_btn = QPushButton("Red (Enemy)")
+        self.yellow_btn = QPushButton("Yellow (Ally)")
+        
+        # Base buttons style - simple list item look
+        base_style = """
+            QPushButton {
+                background-color: #2a2a2a;
+                text-align: left;
+                padding: 10px 15px;
+                border-radius: 8px;
+                border: 1px solid #333;
+                color: #ccc;
+                font-weight: 600;
+            }
+            QPushButton:hover {
+                background-color: #333;
+                border: 1px solid #444;
+                color: white;
             }
         """
         
-        for btn in [self.purple_btn, self.red_btn, self.yellow_btn]:
-            btn.setStyleSheet(button_style)
-            preset_layout.addWidget(btn)
+        # Add color indicator to buttons using border-left
+        for btn, color, indicator in [
+            (self.purple_btn, self.set_purple_preset, "#805ad5"),
+            (self.red_btn, self.set_red_preset, "#e53e3e"), 
+            (self.yellow_btn, self.set_yellow_preset, "#ecc94b")
+        ]:
+            btn.clicked.connect(color)
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.setStyleSheet(base_style + f"QPushButton {{ border-left: 4px solid {indicator}; }}")
+            self.preset_layout.addWidget(btn)
         
-        # Connect button signals
-        self.purple_btn.clicked.connect(self.set_purple_preset)
-        self.red_btn.clicked.connect(self.set_red_preset)
-        self.yellow_btn.clicked.connect(self.set_yellow_preset)
-        
-        layout.addWidget(preset_group)
-        
-        # Sliders for color settings
-        color_settings = [
-            ("hue_min", "Hue Min (0-180):", 0, 180, 1, 'hue'),
-            ("hue_max", "Hue Max (0-180):", 0, 180, 1, 'hue'),
-            ("sat_min", "Sat Min (0-1):", 0, 100, 100, 'saturation'),
-            ("sat_max", "Sat Max (0-1):", 0, 100, 100, 'saturation'),
-            ("val_min", "Val Min (0-255):", 0, 255, 1, 'value'),
-            ("val_max", "Val Max (0-255):", 0, 255, 1, 'value')
-        ]
-        
-        for setting in color_settings:
-            key = setting[0]
-            label_text = setting[1]
-            min_val = setting[2]
-            max_val = setting[3]
-            factor = setting[4]
-            slider_type = setting[5]
-            
-            label = QLabel(label_text)
-            slider_layout = QHBoxLayout()
-            
-            # Use normal slider but apply colorful style
-            slider = QSlider(Qt.Horizontal)
-            slider.setRange(min_val, max_val)
-            slider.setStyleSheet(self.get_slider_style(slider_type))
-            
-            # Default values (Bright Purple/Violet - OpenCV format)
-            default_values = {
-                "hue_min": 140,  # 280° (purple/violet)
-                "hue_max": 150,  # 300° (purple/violet)
-                "sat_min": 43,   # 0.43 (medium-high saturation)
-                "sat_max": 76,   # 0.76
-                "val_min": 150,  # Bright
-                "val_max": 255   # Maximum brightness
-            }
-            
-            if key in default_values:
-                slider.setValue(default_values[key])
-            
-            value_label = QLabel("0")
-            value_label.setMinimumWidth(50)
-            value_label.setAlignment(Qt.AlignCenter)
-            value_label.setStyleSheet("""
-                QLabel {
-                    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                        stop:0 rgba(100, 100, 100, 180), stop:1 rgba(80, 80, 80, 180));
-                    border: 1px solid rgba(120, 120, 120, 0.8);
-                    border-radius: 8px;
-                    padding: 4px 8px;
-                    font-weight: bold;
-                    color: #ffffff;
-                    font-size: 11px;
-                    min-width: 45px;
-                }
-            """)
+        # Separator for Custom Presets
+        line = QFrame()
+        line.setFrameShape(QFrame.HLine)
+        line.setStyleSheet("color: #333;")
+        self.preset_layout.addWidget(line)
 
-            # Capture factor for lambda function
-            slider.valueChanged.connect(
-                lambda val, lbl=value_label, f=factor: lbl.setText(
-                    f"{val/f:.2f}" if f > 1 else str(val)
-                )
-            )
-            
-            # Update preview when slider changes
-            slider.valueChanged.connect(self.update_preview)
-            
-            # Show initial value
-            initial_val = slider.value()
-            value_label.setText(f"{initial_val/factor:.2f}" if factor > 1 else str(initial_val))
-            
-            slider_layout.addWidget(slider)
-            slider_layout.addWidget(value_label)
-            
-            form_layout.addRow(label, slider_layout)
-            self.widgets[key] = slider
+        self.custom_preset_buttons = []
+        self.load_custom_presets()
         
-        layout.addWidget(group_box)
-        layout.addStretch()
+        scroll.setWidget(preset_container)
+        left_layout.addWidget(scroll)
+
+        # --- Right Panel: Preview ---
+        right_panel = QWidget()
+        right_panel.setStyleSheet("background-color: #121212;")
+        right_layout = QVBoxLayout(right_panel)
+        right_layout.setContentsMargins(40, 40, 40, 40)
+        right_layout.setSpacing(25)
         
-        # Right side: Preview
-        preview_widget = QWidget()
-        preview_layout = QVBoxLayout(preview_widget)
-        preview_layout.setContentsMargins(0, 0, 0, 0)
-        preview_layout.setSpacing(10)
+        preview_label = QLabel("VISUAL PREVIEW")
+        preview_label.setStyleSheet("color: #444; font-weight: 900; font-size: 14px; letter-spacing: 4px;")
+        right_layout.addWidget(preview_label)
         
-        # Spectrum widget
-        spectrum_group = QGroupBox("Color Spectrum (0-360°)")
-        spectrum_layout = QVBoxLayout(spectrum_group)
-        self.spectrum_widget = ColorSpectrumWidget()
-        spectrum_layout.addWidget(self.spectrum_widget)
-        preview_layout.addWidget(spectrum_group)
+        # Preview Container with shadow-like border
+        preview_frame = QFrame()
+        preview_frame.setStyleSheet("""
+            QFrame {
+                background-color: #0f0f0f;
+                border: 1px solid #222;
+                border-radius: 20px;
+            }
+        """)
+        frame_layout = QVBoxLayout(preview_frame)
+        frame_layout.setContentsMargins(0, 0, 0, 0)
         
-        # Human figure preview
-        figure_group = QGroupBox("Color Preview")
-        figure_layout = QVBoxLayout(figure_group)
         self.preview_widget = ColorPreviewWidget()
-        figure_layout.addWidget(self.preview_widget)
-        preview_layout.addWidget(figure_group)
+        frame_layout.addWidget(self.preview_widget)
         
-        # Update initial preview
+        right_layout.addWidget(preview_frame, stretch=1)
+        
+        # Spectrum
+        self.spectrum_widget = ColorSpectrumWidget()
+        self.spectrum_widget.setFixedHeight(40)
+        # Using a container for spectrum to round it nicely
+        spectrum_container = QFrame()
+        spectrum_container.setFixedHeight(40)
+        spectrum_container.setStyleSheet("border-radius: 10px; overflow: hidden;")
+        sc_layout = QVBoxLayout(spectrum_container)
+        sc_layout.setContentsMargins(0, 0, 0, 0)
+        sc_layout.addWidget(self.spectrum_widget)
+        
+        right_layout.addWidget(spectrum_container)
+        
+        main_layout.addWidget(left_panel)
+        main_layout.addWidget(right_panel)
+        
+        # Initialize
         self.update_preview()
-        
-        # Add to layout
-        main_layout.addWidget(left_widget, stretch=2)
-        main_layout.addWidget(preview_widget, stretch=1)
 
     def update_preview(self):
         """Update preview widget and spectrum"""
@@ -450,40 +917,7 @@ class ColorSettingsTab(QWidget):
         """Return widgets to main application"""
         return self.widgets
 
-    def load_settings(self, config):
-        """Load settings"""
-        for key, widget in self.widgets.items():
-            if key in config:
-                value_str = config[key]
-                # Calculate factor for decimal values
-                if key in ["sat_min", "sat_max"]:
-                    factor = 100
-                    try:
-                        value = int(float(value_str) * factor)
-                        widget.setValue(value)
-                    except ValueError:
-                        widget.setValue(0)
-                else:
-                    try:
-                        value = int(float(value_str))
-                        widget.setValue(value)
-                    except ValueError:
-                        widget.setValue(0)
-        
-        # Update preview after loading settings
-        self.update_preview()
 
-    def save_settings(self):
-        """Save settings"""
-        settings = {}
-        for key, widget in self.widgets.items():
-            if key in ["sat_min", "sat_max"]:
-                factor = 100
-                value = widget.value() / factor
-                settings[key] = f"{value:.2f}"
-            else:
-                settings[key] = str(widget.value())
-        return settings
     
     def update_theme(self, theme: ColorTheme):
         """Called when theme is updated"""
@@ -532,6 +966,90 @@ class ColorSettingsTab(QWidget):
                 self.widgets[key].setValue(value)
         # Update preview after applying preset
         self.update_preview()
+            
+    def open_hsv_tool(self):
+        self.hsv_window = HSVToolWindow(self)
+        self.hsv_window.settings_saved.connect(self.load_custom_presets)
+        self.hsv_window.show()
+        
+    def load_custom_presets(self):
+        # Clear existing custom buttons from layout
+        for btn in self.custom_preset_buttons:
+            self.preset_layout.removeWidget(btn)
+            btn.deleteLater()
+        self.custom_preset_buttons = []
+        
+        config_file = os.path.join(os.getenv('APPDATA'), 'ds-color', 'config.json')
+        if os.path.exists(config_file):
+            try:
+                with open(config_file, 'r') as f:
+                    presets = json.load(f)
+                    
+                button_style = """
+                    QPushButton {
+                        background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                            stop:0 rgba(60, 140, 60, 120), stop:1 rgba(40, 90, 40, 120));
+                        border: 1px solid rgba(80, 150, 80, 0.6);
+                        border-radius: 8px;
+                        color: white;
+                        font-weight: bold;
+                        padding: 5px 15px;
+                        min-height: 25px;
+                    }
+                    QPushButton:hover {
+                        background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                            stop:0 rgba(80, 160, 80, 180), stop:1 rgba(60, 110, 60, 180));
+                    }
+                """
+                
+                for name, data in presets.items():
+                    btn = QPushButton(name)
+                    btn.setStyleSheet(button_style)
+                    btn.setToolTip("Right-click to delete")
+                    
+                    # Connect click for applying preset
+                    btn.clicked.connect(lambda checked, d=data: self.apply_preset(d))
+                    
+                    # Setup Context Menu for Deletion
+                    btn.setContextMenuPolicy(Qt.CustomContextMenu)
+                    btn.customContextMenuRequested.connect(lambda pos, n=name: self.show_preset_context_menu(pos, n))
+                    
+                    self.preset_layout.addWidget(btn)
+                    self.custom_preset_buttons.append(btn)
+            except Exception as e:
+                print(f"Error loading presets: {e}")
+
+    def show_preset_context_menu(self, pos, name):
+        """Show context menu to delete preset"""
+        sender = self.sender()
+        menu = QMenu()
+        delete_action = QAction(f"Delete '{name}'", self)
+        delete_action.triggered.connect(lambda: self.delete_preset(name))
+        menu.addAction(delete_action)
+        menu.exec_(sender.mapToGlobal(pos))
+        
+    def delete_preset(self, name):
+        """Delete a custom preset"""
+        confirm = QMessageBox.question(self, "Delete Preset", 
+                                     f"Are you sure you want to delete preset '{name}'?",
+                                     QMessageBox.Yes | QMessageBox.No)
+        
+        if confirm == QMessageBox.Yes:
+            config_file = os.path.join(os.getenv('APPDATA'), 'ds-color', 'config.json')
+            if os.path.exists(config_file):
+                try:
+                    with open(config_file, 'r') as f:
+                        presets = json.load(f)
+                    
+                    if name in presets:
+                        del presets[name]
+                        
+                        with open(config_file, 'w') as f:
+                            json.dump(presets, f, indent=4)
+                            
+                        self.load_custom_presets()
+                except Exception as e:
+                    QMessageBox.warning(self, "Error", f"Failed to delete preset: {e}")
     
     def apply_styles(self):
         """Apply gray theme styling"""
@@ -620,3 +1138,52 @@ class ColorSettingsTab(QWidget):
             background: transparent;
         }
         """)
+        
+    def get_settings(self):
+        """Get settings for config"""
+        settings = {}
+        for key, widget in self.widgets.items():
+            if key in ["sat_min", "sat_max"]:
+                # Convert back to float for saving if that's the convention, 
+                # but aimbot tab seems to use strings. 
+                # Let's check ColorSettings in main.py load_comprehensive_color_settings
+                # It expects strings. 
+                factor = 100
+                value = widget.value() / factor
+                settings[key] = f"{value:.2f}"
+            else:
+                settings[key] = str(widget.value())
+        return settings
+
+    def load_settings(self, settings):
+        """Load settings from config"""
+        # Block signals to prevent update_preview spam
+        for widget in self.widgets.values():
+            widget.blockSignals(True)
+            
+        try:
+            for key, widget in self.widgets.items():
+                if key in settings:
+                    value_str = settings[key]
+                    # Calculate factor for decimal values
+                    if key in ["sat_min", "sat_max"]:
+                        factor = 100
+                        try:
+                            value = int(float(value_str) * factor)
+                            widget.setValue(value)
+                        except ValueError:
+                            widget.setValue(0)
+                    else:
+                        try:
+                            value = int(float(value_str))
+                            widget.setValue(value)
+                        except ValueError:
+                            widget.setValue(0)
+                            
+        finally:
+            # Unblock signals
+            for widget in self.widgets.values():
+                widget.blockSignals(False)
+        
+        # Update preview after loading settings
+        self.update_preview()

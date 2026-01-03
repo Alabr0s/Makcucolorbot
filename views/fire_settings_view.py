@@ -1,5 +1,5 @@
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QFormLayout, QGroupBox, QSlider, 
-                             QHBoxLayout, QLabel, QCheckBox, QPushButton, QScrollArea)
+                             QHBoxLayout, QLabel, QCheckBox, QPushButton, QScrollArea, QFrame, QGridLayout)
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer, QSize
 from PyQt5.QtGui import QColor, QIcon, QPixmap
 from aimbot.key_capture import KeyCaptureButton
@@ -12,6 +12,105 @@ import mss
 import cv2
 import keyboard
 from tcp_client import AimTCPClient
+import json
+import urllib.request
+import os
+from PyQt5.QtGui import QPixmap, QIcon
+
+class WeaponImageLoader(QThread):
+    icon_loaded = pyqtSignal(str, str) # name, path
+    
+    def run(self):
+        try:
+            import ssl
+            import shutil
+            
+            # Cache directory
+            cache_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'image', 'cache')
+            os.makedirs(cache_dir, exist_ok=True)
+            
+            print(f"Ikon cache dizini: {cache_dir}")
+            
+            # SSL Context (Unsafe for spoofing purposes/avoiding errors)
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+            
+            # Fetch weapon data
+            print("Fetching weapon data from Valorant API...")
+            
+            req = urllib.request.Request(
+                "https://valorant-api.com/v1/weapons", 
+                headers={'User-Agent': 'Mozilla/5.0'}
+            )
+            
+            try:
+                with urllib.request.urlopen(req, context=ctx) as url:
+                    data = json.loads(url.read().decode())
+            except Exception as e:
+                print(f"API Request Failed: {e}")
+                return
+                
+            weapons_map = {
+                "Classic": "Classic",
+                "Shorty": "Shorty", 
+                "Frenzy": "Frenzy",
+                "Ghost": "Ghost",
+                "Sheriff": "Sheriff",
+                "Stinger": "Stinger",
+                "Spectre": "Spectre",
+                "Bucky": "Bucky",
+                "Judge": "Judge",
+                "Bulldog": "Bulldog",
+                "Guardian": "Guardian",
+                "Phantom": "Phantom",
+                "Vandal": "Vandal",
+                "Marshal": "Marshal",
+                "Operator": "Operator",
+                "Ares": "Ares",
+                "Odin": "Odin",
+                "Outlaw": "Outlaw"
+            }
+            
+            print(f"API returned {len(data['data'])} items.")
+            
+            for item in data['data']:
+                name = item['displayName']
+                
+                # Handle special case if needed or match directly
+                target_name = None
+                if name in weapons_map:
+                    target_name = name
+                
+                if target_name:
+                    icon_url = item['displayIcon']
+                    save_path = os.path.join(cache_dir, f"{target_name.lower()}.png")
+                    
+                    # Ensure we have the file
+                    if not os.path.exists(save_path) or os.path.getsize(save_path) == 0:
+                        print(f"Downloading icon for {target_name} from {icon_url}...")
+                        try:
+                            img_req = urllib.request.Request(
+                                icon_url, 
+                                headers={'User-Agent': 'Mozilla/5.0'}
+                            )
+                            with urllib.request.urlopen(img_req, context=ctx) as r:
+                                with open(save_path, 'wb') as f:
+                                    shutil.copyfileobj(r, f)
+                            print(f"Downloaded: {save_path}")
+                        except Exception as dl_err:
+                            print(f"Failed to download {target_name}: {dl_err}")
+                            continue
+                    else:
+                        print(f"Icon exists: {save_path}")
+                    
+                    # Emit signal to update UI
+                    self.icon_loaded.emit(target_name.upper(), save_path)
+                    
+        except Exception as e:
+            print(f"Error loading weapon icons: {e}")
+            import traceback
+            traceback.print_exc()
 
 
 class TriggerbotScanner(QThread):
@@ -442,6 +541,13 @@ class FireSettingsTab(QWidget):
         self.widgets = {}
         self.current_theme = ColorTheme.LIGHT  # Varsayılan tema
         
+        # Weapon buttons ref to update icons
+        self.weapon_btns = {}
+        
+        # Image Loader
+        self.img_loader = WeaponImageLoader()
+        self.img_loader.icon_loaded.connect(self.update_weapon_icon)
+        
         # Triggerbot scanner - ÖNCE UI'yı oluştur, SONRA thread'i başlat
         self.triggerbot = TriggerbotScanner()
         self.triggerbot.target_detected.connect(self.on_target_detected)
@@ -456,163 +562,353 @@ class FireSettingsTab(QWidget):
         
         # UI hazır olduktan SONRA thread'i başlat
         self.triggerbot.start()
+        self.img_loader.start()
+
+    def update_weapon_icon(self, name, path):
+        if name in self.weapon_btns:
+            btn = self.weapon_btns[name]
+            pix = QPixmap(path)
+            if not pix.isNull():
+                 # Resize for compact button
+                btn.setIcon(QIcon(pix))
+                btn.setIconSize(QSize(50, 30))
+                btn.setText("") # Clear text when icon loads
+            else:
+                print(f"Failed to load pixmap from {path}")
 
     def setup_ui(self):
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(20, 20, 20, 20)
-        main_layout.setSpacing(25)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
         
-        # Scroll area
-        scroll_area = QScrollArea()
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        # --- Header Section ---
+        header_frame = QFrame()
+        header_frame.setStyleSheet("background-color: #1a1a1a; border-bottom: 1px solid #333;")
+        header_frame.setFixedHeight(80)
+        header_layout = QHBoxLayout(header_frame)
+        header_layout.setContentsMargins(30, 0, 30, 0)
+        header_layout.setSpacing(15)
         
-        # Ana grup
-        main_group = self.create_main_group()
-        scroll_area.setWidget(main_group)
-        main_layout.addWidget(scroll_area)
+        title_label = QLabel("TRIGGERBOT")
+        title_label.setStyleSheet("color: #fff; font-size: 20px; font-weight: 900; letter-spacing: 2px;")
         
-        self.apply_styles()
-
-    def create_main_group(self):
-        group = QGroupBox("Triggerbot Settings")
-        layout = QFormLayout(group)
-        layout.setSpacing(18)
-        layout.setLabelAlignment(Qt.AlignRight)
-        layout.setContentsMargins(15, 15, 15, 15)
-        
-        # === MAIN CONTROL ===
-        self.enabled_checkbox = QCheckBox()
-        self.enabled_checkbox.stateChanged.connect(self.on_enabled_changed)
-        layout.addRow("Triggerbot Active:", self.enabled_checkbox)
-        
-        # Weapon selection buttons
-        weapon_layout = QHBoxLayout()
-        weapon_layout.setSpacing(15)
-        weapon_layout.setContentsMargins(0, 10, 0, 10)
-        
-        # Ghost button
-        self.ghost_button = QPushButton()
-        self.ghost_button.setIcon(QIcon("image/ghost.png"))
-        self.ghost_button.setIconSize(QSize(40, 40))
-        self.ghost_button.setFixedSize(60, 60)
-        self.ghost_button.clicked.connect(lambda: self.set_weapon_delays(180, 300))
-        self.ghost_button.setToolTip("Ghost - Min: 180ms, Max: 300ms")
-        weapon_layout.addWidget(self.ghost_button)
-        
-        # Sheriff button
-        self.sheriff_button = QPushButton()
-        self.sheriff_button.setIcon(QIcon("image/sheriff.png"))
-        self.sheriff_button.setIconSize(QSize(40, 40))
-        self.sheriff_button.setFixedSize(60, 60)
-        self.sheriff_button.clicked.connect(lambda: self.set_weapon_delays(450, 560))
-        self.sheriff_button.setToolTip("Sheriff - Min: 450ms, Max: 560ms")
-        weapon_layout.addWidget(self.sheriff_button)
-        
-        # Vandal button
-        self.vandal_button = QPushButton()
-        self.vandal_button.setIcon(QIcon("image/vandal.png"))
-        self.vandal_button.setIconSize(QSize(40, 40))
-        self.vandal_button.setFixedSize(60, 60)
-        self.vandal_button.clicked.connect(lambda: self.set_weapon_delays(180, 280))
-        self.vandal_button.setToolTip("Vandal - Min: 180ms, Max: 280ms")
-        weapon_layout.addWidget(self.vandal_button)
-        
-        weapon_layout.addStretch()
-        layout.addRow("Weapon Presets:", weapon_layout)
-        
-        # Status indicator
-        self.status_label = QLabel("Disabled")
-        self.status_label.setStyleSheet("color: #ff6b6b; font-weight: bold;")
-        layout.addRow("Status:", self.status_label)
-        
-        # === FIRING SETTINGS ===
-        self.fire_delay_min_slider = self.create_slider(50, 1000, 170, "ms")
-        layout.addRow("Min Fire Delay:", self.fire_delay_min_slider[0])
-        self.widgets["fire_delay_min"] = self.fire_delay_min_slider[1]
-        
-        self.fire_delay_max_slider = self.create_slider(100, 1000, 480, "ms")
-        layout.addRow("Max Fire Delay:", self.fire_delay_max_slider[0])
-        self.widgets["fire_delay_max"] = self.fire_delay_max_slider[1]
-        
-        # === SCAN SETTINGS ===
-        self.area_size_slider = self.create_slider(1, 50, 6, "px")
-        layout.addRow("Scan Area:", self.area_size_slider[0])
-        self.widgets["area_size"] = self.area_size_slider[1]
-        
-        self.scan_fps_slider = self.create_slider(1, 500, 200, "fps")
-        layout.addRow("Scan FPS:", self.scan_fps_slider[0])
-        self.widgets["scan_fps"] = self.scan_fps_slider[1]
-        
-        # === KEY SETTINGS ===
-        # Hold key checkbox
-        self.holdkey_checkbox = QCheckBox()
-        self.holdkey_checkbox.stateChanged.connect(self.update_key_settings)
-        layout.addRow("Hold Key Active:", self.holdkey_checkbox)
-        
-        # Hold key selector
-        holdkey_layout = QHBoxLayout()
-        holdkey_layout.setSpacing(12)
-        self.holdkey_button = KeyCaptureButton("g")
-        self.holdkey_button.setFixedHeight(35)
-        self.holdkey_button.key_captured.connect(self.on_holdkey_captured)
-        
-        holdkey_info_label = QLabel("Hold key")
-        holdkey_info_label.setProperty('info_type', 'key')
-        
-        holdkey_layout.addWidget(self.holdkey_button)
-        holdkey_layout.addWidget(holdkey_info_label)
-        holdkey_layout.addStretch()
-        layout.addRow("Hold Key:", holdkey_layout)
-        
-        # Toggle key selector
-        toggle_layout = QHBoxLayout()
-        toggle_layout.setSpacing(12)
+        # Key Controls in Header
+        # Toggle Key
         self.toggle_button = KeyCaptureButton("home")
-        self.toggle_button.setFixedHeight(35)
+        self.toggle_button.setFixedSize(70, 30)
+        self.toggle_button.setStyleSheet(self.get_key_btn_style())
         self.toggle_button.key_captured.connect(self.on_toggle_captured)
         
-        toggle_info_label = QLabel("Toggle key")
-        toggle_info_label.setProperty('info_type', 'key')
+        tog_label = QLabel("Toggle:")
+        tog_label.setStyleSheet("color: #888; font-weight: bold; font-size: 11px;")
         
-        toggle_layout.addWidget(self.toggle_button)
-        toggle_layout.addWidget(toggle_info_label)
-        toggle_layout.addStretch()
-        layout.addRow("Toggle Key:", toggle_layout)
+        # Hold Key
+        self.holdkey_checkbox = QCheckBox("Hold:")
+        self.holdkey_checkbox.setStyleSheet("""
+            QCheckBox { color: #888; font-weight: bold; font-size: 11px; spacing: 5px; }
+            QCheckBox::indicator { width: 14px; height: 14px; border-radius: 3px; background: #333; border: 1px solid #555; }
+            QCheckBox::indicator:checked { background: #00cc66; border: 1px solid #00aa55; }
+        """)
+        self.holdkey_checkbox.stateChanged.connect(self.update_key_settings)
         
-        # === INFORMATION ===
-        color_info = QLabel("Color settings are taken from the 'Color Settings' tab")
-        color_info.setStyleSheet("color: #42a5f5; font-size: 11px; font-style: italic;")
-        layout.addRow("Color Settings:", color_info)
+        self.holdkey_button = KeyCaptureButton("g")
+        self.holdkey_button.setFixedSize(70, 30)
+        self.holdkey_button.setStyleSheet(self.get_key_btn_style())
+        self.holdkey_button.key_captured.connect(self.on_holdkey_captured)
+
+        # Status Badge
+        self.status_label = QLabel("READY")
+        self.status_label.setStyleSheet("""
+            background-color: #2d2d2d; 
+            color: #666; 
+            padding: 4px 8px; 
+            border-radius: 4px; 
+            font-weight: bold; 
+            font-size: 10px;
+            letter-spacing: 1px;
+        """)
         
-        return group
-    
-    def create_slider(self, min_val, max_val, default_val, unit):
-        """Create modern slider"""
+        self.enabled_checkbox = QCheckBox("ACTIVE")
+        self.enabled_checkbox.setCursor(Qt.PointingHandCursor)
+        self.enabled_checkbox.setStyleSheet("""
+            QCheckBox { color: #fff; font-weight: bold; font-size: 12px; spacing: 8px; }
+            QCheckBox::indicator { width: 36px; height: 18px; border-radius: 9px; background: #333; }
+            QCheckBox::indicator:checked { background: #00cc66; }
+        """)
+        self.enabled_checkbox.stateChanged.connect(self.on_enabled_changed)
+
+        header_layout.addWidget(title_label)
+        header_layout.addStretch()
+        
+        # Add Keys to Header
+        header_layout.addWidget(tog_label)
+        header_layout.addWidget(self.toggle_button)
+        header_layout.addSpacing(15)
+        header_layout.addWidget(self.holdkey_checkbox)
+        header_layout.addWidget(self.holdkey_button)
+        
+        header_layout.addSpacing(25)
+        
+        # Status and Activate
+        header_layout.addWidget(self.status_label)
+        header_layout.addSpacing(15)
+        header_layout.addWidget(self.enabled_checkbox)
+        
+        main_layout.addWidget(header_frame)
+        
+        # --- Content Area ---
+        content_scroll = QScrollArea()
+        content_scroll.setWidgetResizable(True)
+        content_scroll.setFrameShape(QFrame.NoFrame)
+        content_scroll.setStyleSheet("background: #121212;")
+        
+        content_widget = QWidget()
+        content_layout = QVBoxLayout(content_widget)
+        content_layout.setContentsMargins(30, 30, 30, 30)
+        content_layout.setSpacing(25)
+        
+        # 1. Weapon Presets (Buy Menu Style)
+        preset_label = QLabel("WEAPON PROFILE")
+        preset_label.setStyleSheet("color: #666; font-weight: bold; font-size: 11px; letter-spacing: 1px;")
+        content_layout.addWidget(preset_label)
+        
+        # Buy Menu Grid Layout
+        buy_menu_layout = QHBoxLayout()
+        buy_menu_layout.setSpacing(10)
+        
+        # Column 1: SIDEARMS
+        col1_layout = QVBoxLayout()
+        col1_lbl = QLabel("SIDEARMS")
+        col1_lbl.setStyleSheet("color: #888; font-weight: 900; font-size: 10px; margin-bottom: 5px;")
+        col1_layout.addWidget(col1_lbl)
+        
+        sidearms = [
+            ("CLASSIC", 200, 300),
+            ("SHORTY", 150, 250),
+            ("FRENZY", 120, 200),
+            ("GHOST", 180, 300),
+            ("SHERIFF", 450, 560)
+        ]
+        grid1 = QGridLayout()
+        grid1.setSpacing(5)
+        for i, (name, min_d, max_d) in enumerate(sidearms):
+             btn = self.create_compact_weapon_btn(name, min_d, max_d, "#a0aec0")
+             grid1.addWidget(btn, i, 0)
+        col1_layout.addLayout(grid1)
+        col1_layout.addStretch()
+        
+        # Column 2: SMGS & SHOTGUNS
+        col2_layout = QVBoxLayout()
+        col2_lbl = QLabel("SMGs & SHOTGUNS")
+        col2_lbl.setStyleSheet("color: #888; font-weight: 900; font-size: 10px; margin-bottom: 5px;")
+        col2_layout.addWidget(col2_lbl)
+        
+        smgs_shotguns = [
+            ("STINGER", 100, 180, "#d69e2e"),
+            ("SPECTRE", 120, 200, "#d69e2e"),
+            ("BUCKY", 400, 600, "#dd6b20"),
+            ("JUDGE", 200, 350, "#dd6b20")
+        ]
+        grid2 = QGridLayout()
+        grid2.setSpacing(5)
+        for i, data in enumerate(smgs_shotguns):
+             name, min_d, max_d, color = data
+             btn = self.create_compact_weapon_btn(name, min_d, max_d, color)
+             grid2.addWidget(btn, i, 0)
+        col2_layout.addLayout(grid2)
+        col2_layout.addStretch()
+
+        # Column 3: RIFLES
+        col3_layout = QVBoxLayout()
+        col3_lbl = QLabel("RIFLES")
+        col3_lbl.setStyleSheet("color: #888; font-weight: 900; font-size: 10px; margin-bottom: 5px;")
+        col3_layout.addWidget(col3_lbl)
+        
+        rifles = [
+            ("BULLDOG", 180, 280),
+            ("GUARDIAN", 200, 350),
+            ("PHANTOM", 150, 250),
+            ("VANDAL", 180, 280)
+        ]
+        grid3 = QGridLayout()
+        grid3.setSpacing(5)
+        for i, (name, min_d, max_d) in enumerate(rifles):
+             btn = self.create_compact_weapon_btn(name, min_d, max_d, "#319795")
+             grid3.addWidget(btn, i, 0)
+        col3_layout.addLayout(grid3)
+        col3_layout.addStretch()
+
+        # Column 4: SNIPER & MACHINE GUNS
+        col4_layout = QVBoxLayout()
+        col4_lbl = QLabel("SNIPER & HEAVY")
+        col4_lbl.setStyleSheet("color: #888; font-weight: 900; font-size: 10px; margin-bottom: 5px;")
+        col4_layout.addWidget(col4_lbl)
+        
+        sniper_heavy = [
+            ("MARSHAL", 350, 500, "#38a169"),
+            ("OUTLAW", 400, 600, "#38a169"),
+            ("OPERATOR", 800, 1000, "#e53e3e"),
+            ("ARES", 150, 250, "#d53f8c"),
+            ("ODIN", 150, 250, "#d53f8c")
+        ]
+        grid4 = QGridLayout()
+        grid4.setSpacing(5)
+        for i, data in enumerate(sniper_heavy):
+             name, min_d, max_d, color = data
+             btn = self.create_compact_weapon_btn(name, min_d, max_d, color)
+             grid4.addWidget(btn, i, 0)
+        col4_layout.addLayout(grid4)
+        col4_layout.addStretch()
+
+        # Add Columns to Main Row
+        buy_menu_layout.addLayout(col1_layout)
+        buy_menu_layout.addLayout(col2_layout)
+        buy_menu_layout.addLayout(col3_layout)
+        buy_menu_layout.addLayout(col4_layout)
+        
+        content_layout.addLayout(buy_menu_layout)
+        
+        # 2. Settings Grid (Timing & Scanning)
+        settings_grid = QHBoxLayout()
+        settings_grid.setSpacing(20)
+        
+        # Left Column: Timing & Logic
+        timing_frame = QFrame()
+        timing_frame.setStyleSheet("""
+            background-color: #181818; 
+            border-radius: 15px;
+        """)
+        timing_layout = QVBoxLayout(timing_frame)
+        timing_layout.setContentsMargins(25, 25, 25, 25)
+        timing_layout.setSpacing(20)
+        
+        t_label = QLabel("TIMING LOGIC")
+        t_label.setStyleSheet("color: #666; font-weight: 900; letter-spacing: 2px; font-size: 11px;")
+        timing_layout.addWidget(t_label)
+        
+        self.fire_delay_min_slider = self.create_slider("Reaction Delay (Min)", 50, 1000, 170, "ms")
+        self.widgets["fire_delay_min"] = self.fire_delay_min_slider[1]
+        timing_layout.addWidget(self.fire_delay_min_slider[0])
+        
+        self.fire_delay_max_slider = self.create_slider("Reaction Delay (Max)", 100, 1000, 480, "ms")
+        self.widgets["fire_delay_max"] = self.fire_delay_max_slider[1]
+        timing_layout.addWidget(self.fire_delay_max_slider[0])
+        timing_layout.addStretch()
+        
+        # Right Column: Detection
+        scan_frame = QFrame()
+        scan_frame.setStyleSheet("""
+            background-color: #181818; 
+            border-radius: 15px;
+        """)
+        scan_layout = QVBoxLayout(scan_frame)
+        scan_layout.setContentsMargins(25, 25, 25, 25)
+        scan_layout.setSpacing(20)
+        
+        s_label = QLabel("DETECTION PARAMETERS")
+        s_label.setStyleSheet("color: #666; font-weight: 900; letter-spacing: 2px; font-size: 11px;")
+        scan_layout.addWidget(s_label)
+        
+        self.area_size_slider = self.create_slider("Scan Area (FOV)", 1, 50, 6, "px")
+        self.widgets["area_size"] = self.area_size_slider[1]
+        scan_layout.addWidget(self.area_size_slider[0])
+        
+        self.scan_fps_slider = self.create_slider("Scan Refresh Rate", 1, 500, 200, "FPS")
+        self.widgets["scan_fps"] = self.scan_fps_slider[1]
+        scan_layout.addWidget(self.scan_fps_slider[0])
+        scan_layout.addStretch()
+        
+        settings_grid.addWidget(timing_frame)
+        settings_grid.addWidget(scan_frame)
+        
+        content_layout.addLayout(settings_grid)
+
+        content_layout.addStretch()
+        
+        # Info Footer
+        info_label = QLabel("COLOR SETTINGS ARE INHERITED FROM THE MAIN COLOR CONFIG TAB")
+        info_label.setAlignment(Qt.AlignCenter)
+        info_label.setStyleSheet("color: #444; font-weight: 900; font-size: 10px; letter-spacing: 1px;")
+        content_layout.addWidget(info_label)
+        
+        content_scroll.setWidget(content_widget)
+        main_layout.addWidget(content_scroll)
+
+    def create_compact_weapon_btn(self, name, min_d, max_d, color):
+        btn = QPushButton(name) # Init with text
+        btn.setCursor(Qt.PointingHandCursor)
+        btn.setFixedSize(60, 45) # Small compact size
+        btn.setToolTip(f"{name}\nDelay: {min_d}-{max_d}ms")
+        btn.clicked.connect(lambda: self.set_weapon_delays(min_d, max_d))
+        
+        # Store for icon update
+        self.weapon_btns[name] = btn
+        
+        btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: #1a1a1a;
+                border: 1px solid #333;
+                border-radius: 4px;
+                color: #888;
+                font-size: 9px;
+                font-weight: bold;
+            }}
+            QPushButton:hover {{
+                background-color: #252525;
+                border: 1px solid {color};
+                color: #fff;
+            }}
+            QPushButton:pressed {{
+                background-color: #151515;
+                border: 2px solid {color};
+            }}
+        """)
+        return btn
+
+    def create_slider(self, label_text, min_val, max_val, default_val, unit):
         container = QWidget()
-        layout = QHBoxLayout(container)
+        layout = QVBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(10)
+        layout.setSpacing(5)
+        
+        header = QHBoxLayout()
+        header_lbl = QLabel(label_text)
+        header_lbl.setStyleSheet("color: #ccc; font-weight: 600; font-size: 12px;")
+        
+        val_lbl = QLabel(f"{default_val}{unit}")
+        val_lbl.setStyleSheet("color: #fff; font-weight: bold; font-family: monospace;")
+        
+        header.addWidget(header_lbl)
+        header.addStretch()
+        header.addWidget(val_lbl)
         
         slider = QSlider(Qt.Horizontal)
         slider.setRange(min_val, max_val)
         slider.setValue(default_val)
+        slider.setStyleSheet("""
+            QSlider::groove:horizontal { height: 4px; background: #333; border-radius: 2px; }
+            QSlider::handle:horizontal { background: #00cc66; width: 16px; height: 16px; margin: -6px 0; border-radius: 8px; }
+        """)
         
-        value_label = QLabel(f"{default_val}{unit}")
-        value_label.setMinimumWidth(50)
-        value_label.setAlignment(Qt.AlignCenter)
+        slider.valueChanged.connect(lambda v: val_lbl.setText(f"{v}{unit}"))
+        slider.valueChanged.connect(self.update_triggerbot_settings)
         
-        def update_label(value):
-            value_label.setText(f"{value}{unit}")
-            self.update_triggerbot_settings()
-        
-        slider.valueChanged.connect(update_label)
-        
+        layout.addLayout(header)
         layout.addWidget(slider)
-        layout.addWidget(value_label)
         
         return container, slider
+
+    def get_key_btn_style(self):
+        return """
+            QPushButton {
+                background-color: #2a2a2a;
+                color: white;
+                border: 1px solid #444;
+                border-radius: 5px;
+                font-weight: bold;
+            }
+            QPushButton:hover { border-color: #00cc66; }
+        """
     
     def update_checkbox_from_toggle(self, enabled):
         """Update checkbox when toggle key is pressed"""
@@ -643,8 +939,8 @@ class FireSettingsTab(QWidget):
             import traceback
             traceback.print_exc()
     
-    def save_settings(self):
-        """Save settings for config"""
+    def get_settings(self):
+        """Get settings for config"""
         try:
             settings = {
                 # Main control

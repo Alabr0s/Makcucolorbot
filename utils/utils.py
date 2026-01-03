@@ -235,10 +235,18 @@ class WatermarkWindow(QWidget):
             # Resim varsa resim boyutuna göre ayarla
             self.setFixedSize(self.pixmap.width(), self.pixmap.height())
         else:
-            # Resim yoksa yazı için boyut
-            self.setFixedSize(180, 35)
+            # Resim yoksa yazı için boyut (Daha küçük)
+            self.setFixedSize(150, 25)
         
-        self.move(15, 15)
+        # Ekranin sağ üst köşesine konumlandır
+        try:
+            from PyQt5.QtWidgets import QApplication
+            screen_geo = QApplication.primaryScreen().geometry()
+            x = screen_geo.width() - self.width() - 20  # Sağdan 20px boşluk
+            y = 20  # Yukarıdan 20px boşluk
+            self.move(x, y)
+        except Exception:
+            self.move(100, 100) # Fallback
         
         # Ana timer
         self.timer = QTimer(self)
@@ -330,10 +338,10 @@ class WatermarkWindow(QWidget):
             
             painter.setOpacity(self.opacity)
             
-            # Font ayarları
+            # Font ayarları - KÜÇÜK VE KOMPAKT
             font = painter.font()
             font.setFamily("Consolas")
-            font.setPointSize(12)
+            font.setPointSize(9)  # Küçük font
             font.setBold(True)
             painter.setFont(font)
             
@@ -346,16 +354,16 @@ class WatermarkWindow(QWidget):
             # Siyah gölge efekti
             shadow_color = QColor(0, 0, 0, 180)  # Siyah gölge
             painter.setPen(shadow_color)
-            painter.drawText(3, 19, text)  # Gölge pozisyonu (1 pixel sağ-aşağı)
+            painter.drawText(2, 16, text)  # Gölge pozisyonu
             
             # Ana yazı - beyaz
             white_color = QColor(255, 255, 255)  # Beyaz renk
             painter.setPen(white_color)
-            painter.drawText(2, 18, text)
+            painter.drawText(1, 15, text)
             
             # Rainbow çizgi için gradient oluştur
-            line_y = 26  # Yazının daha altında çizgi pozisyonu
-            line_gradient = QLinearGradient(2, line_y, 2 + text_width, line_y)
+            line_y = 20  # Yazının altında çizgi
+            line_gradient = QLinearGradient(1, line_y, 1 + text_width, line_y)
             
             # Soft rainbow gradient renkleri (daha az renk geçişi, daha yumuşak)
             r1, g1, b1 = self.get_rainbow_color(0)
@@ -369,9 +377,9 @@ class WatermarkWindow(QWidget):
             line_gradient.setColorAt(0.66, QColor(r3, g3, b3))
             line_gradient.setColorAt(1.0, QColor(r4, g4, b4))
             
-            # Rainbow çizgiyi çiz (2 pixel kalınlık)
-            painter.setPen(QPen(QBrush(line_gradient), 2))
-            painter.drawLine(2, line_y, 2 + text_width, line_y)
+            # Rainbow çizgiyi çiz (1 pixel kalınlık)
+            painter.setPen(QPen(QBrush(line_gradient), 1))
+            painter.drawLine(1, line_y, 1 + text_width, line_y)
 
     def close(self):
         self.timer.stop()

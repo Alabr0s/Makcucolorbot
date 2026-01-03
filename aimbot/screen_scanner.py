@@ -4,6 +4,7 @@ Handles screen capture and target detection
 """
 
 import time
+import random
 import numpy as np
 import mss
 import keyboard
@@ -57,6 +58,10 @@ class ScreenScanner(QThread):
         self.frame_skip = 0  # Frame skip count
         self.last_scan_time = 0  # Last scan time
         self.performance_mode = False  # Performance mode
+        
+        # Silent Aim Settings
+        self.silent_aim_enabled = False
+
         
         # FPS (Frame Rate) settings - New Feature
         self.target_fps = 60  # Target FPS (default 60)
@@ -200,25 +205,55 @@ class ScreenScanner(QThread):
                     
                     # Lock onto primary target (number 1)
                     if self.primary_target:
-                        # Circle check: Move mouse if any point touches the circle
-                        if self.primary_target.get('touching_indicator', False):
-                            target_point = self.primary_target['center']
-
-                            # Convert to real screen coordinates
-                            real_x = monitor['left'] + target_point[0]
-                            real_y = monitor['top'] + target_point[1]
-
-                            # Aim calculation - ERROR WAS HERE, FIXED
-                            move_x, move_y = self.mouse_controller.calculate_direct_movement(
-                                real_x, real_y, center_x, center_y
-                            )
-
-                            # Send mouse movement
-                            if self.mouse_controller.send_movement(move_x, move_y):
-                                self.target_found.emit(move_x, move_y)
+                        target_point = self.primary_target['center']
+                        real_x = monitor['left'] + target_point[0]
+                        real_y = monitor['top'] + target_point[1]
+                        
+                        # Silent Aim Logic
+                        if self.silent_aim_enabled:
+                            # 1. Instant move to target
+                            # Align with IndicatorWindow offset (-1, -1 from center)
+                            raw_dx = (real_x - center_x) + 1
+                            raw_dy = (real_y - center_y) + 1
+                            
+                            # Apply Sensitivity/Scaling (mickeys per pixel)
+                            # We must use the same scaling as the normal aimbot to match game sensitivity
+                            damage_scaling = self.mouse_controller.aim_speed / 10.0
+                            
+                            move_dx = int(raw_dx * damage_scaling)
+                            move_dy = int(raw_dy * damage_scaling)
+                            
+                            if self.mouse_controller.tcp_client.send_movement(move_dx, move_dy):
+                                # 2. Wait 300-500ms random
+                                wait_time = random.uniform(0.30, 0.50)
+                                time.sleep(wait_time)
+                                
+                                # 3. Fire command
+                                self.mouse_controller.send_fire_command()
+                                
+                                # 4. Return to start position (inverse movement)
+                                self.mouse_controller.tcp_client.send_movement(-move_dx, -move_dy)
+                                
+                                # Emit target found for debug/status
+                                self.target_found.emit(move_dx, move_dy)
+                                
+                                # cooldown to prevent spamming in same frame
+                                time.sleep(0.05) 
                         else:
-                            # Target is not touching circle, tracking can be reset.
-                            self.mouse_controller.reset_tracking()
+                            # Normal Aimbot Logic
+                            # Circle check: Move mouse if any point touches the circle
+                            if self.primary_target.get('touching_indicator', False):
+                                # Aim calculation - ERROR WAS HERE, FIXED
+                                move_x, move_y = self.mouse_controller.calculate_direct_movement(
+                                    real_x, real_y, center_x, center_y
+                                )
+
+                                # Send mouse movement
+                                if self.mouse_controller.send_movement(move_x, move_y):
+                                    self.target_found.emit(move_x, move_y)
+                            else:
+                                # Target is not touching circle, tracking can be reset.
+                                self.mouse_controller.reset_tracking()
                     else:
                         # Reset last target when target is not found
                         self.mouse_controller.reset_tracking()
@@ -487,6 +522,11 @@ class ScreenScanner(QThread):
 
         # Show notification
         self._show_aimbot_notification()
+
+    def set_silent_aim(self, enabled):
+        """Enable/Disable Silent Aim"""
+        self.silent_aim_enabled = enabled
+
 
     def _show_aimbot_notification(self):
         """Show aimbot status notification"""

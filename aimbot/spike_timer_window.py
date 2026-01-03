@@ -1,102 +1,152 @@
 """
 Spike Timer Window
-A non-interactive window with transparent black background and sharp corners made with PyQt5
+A modern HUD-style overlay for the Spike Timer
 """
 
-from PyQt5.QtWidgets import QWidget, QLabel
-from PyQt5.QtCore import Qt, QTimer
-from PyQt5.QtGui import QFont, QColor, QPainter, QBrush, QPen
-
+import time
+from PyQt5.QtWidgets import QWidget, QLabel, QVBoxLayout
+from PyQt5.QtCore import Qt, QTimer, QRectF
+from PyQt5.QtGui import QFont, QColor, QPainter, QBrush, QPen, QLinearGradient, QBitmap
+from utils.security import set_window_affinity
 
 class SpikeTimerWindow(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.time_left = 0  # milliseconds
+        self.total_time = 45000 # 45 seconds default
+        self.time_left = 0  
+        self.start_timestamp = 0
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_timer)
-        self.on_timer_finished = None  # Callback function
-        self.on_timer_finished = None  # Callback function
+        self.on_timer_finished = None 
         
-        # Window settings
+        # Window flags for overlay
         self.setWindowFlags(
             Qt.WindowStaysOnTopHint |
             Qt.FramelessWindowHint |
             Qt.Tool |
             Qt.WindowDoesNotAcceptFocus
         )
-        self.setAttribute(Qt.WA_TranslucentBackground)
+        # Qt.WA_TranslucentBackground is incompatible with SetWindowDisplayAffinity
+        # We use setMask instead for rounded corners
+        # self.setAttribute(Qt.WA_TranslucentBackground)
         self.setAttribute(Qt.WA_TransparentForMouseEvents)
         self.setAttribute(Qt.WA_ShowWithoutActivating)
-        self.setFocusPolicy(Qt.NoFocus)
         
-        # Pencere boyutu ve konumu
-        self.setFixedSize(120, 50)
+        # Dimensions
+        self.setFixedSize(160, 60)
         self.center_on_top()
         
-        # Label settings
-        self.label = QLabel(self)
-        self.label.setAlignment(Qt.AlignCenter)
-        self.label.setGeometry(0, 0, 120, 50)
-        font = QFont("Arial", 18, QFont.Bold)
-        self.label.setFont(font)
-        self.label.setStyleSheet("color: white; background: transparent; border: none;")
-        self.label.setText("00:00")
+        # Create mask for rounded corners since we disabled TranslucentBackground
+        self.update_mask()
+
+    def update_mask(self):
+        bmp = QBitmap(self.size())
+        bmp.fill(Qt.color0) # Transparent
+        painter = QPainter(bmp)
+        painter.setBrush(Qt.color1) # Opaque area
+        painter.setPen(Qt.NoPen)
+        # Match the rounded rect drawing in paintEvent
+        rect = self.rect()
+        painter.drawRoundedRect(rect.adjusted(1, 1, -1, -1), 10, 10)
+        painter.end()
+        self.setMask(bmp)
         
     def center_on_top(self):
-        """Position window at the top center of screen"""
+        """Position window at the top center of screen with margin"""
         screen = self.screen().geometry()
         x = (screen.width() - self.width()) // 2
-        y = 0  # Top
+        y = 80  # Slightly down from top
         self.move(x, y)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        # Apply screen capture protection
+        set_window_affinity(int(self.winId()))
         
-    def start_timer(self, duration_ms):
-        """Start timer"""
-        # Start with 44 seconds
-        self.time_left = 44000  # 44 seconds = 44000 ms
+    def start_timer(self, duration_ms=45000):
+        """Start timer with duration"""
+        self.total_time = duration_ms
+        self.time_left = duration_ms
+        self.start_timestamp = time.time()
         self.update_display()
         self.show()
-        self.raise_()  # Bring window to front
-        # print(f"Spike Timer: Started timer for 44 seconds")
-        self.timer.start(10)  # 10ms = 0.01s
+        self.raise_() 
+        self.timer.start(10) # 10ms update
         
-    def show(self):
-        """Show window"""
-        super().show()
-        # print("Spike Timer Window: Shown")
-        # Bring window to front
-        self.raise_()
+    def stop_timer(self):
+        """Stop and hide"""
+        self.timer.stop()
+        self.hide()
         
     def update_timer(self):
-        """Update timer"""
-        self.time_left -= 10
+        elapsed_seconds = time.time() - self.start_timestamp
+        elapsed_ms = int(elapsed_seconds * 1000)
+        self.time_left = self.total_time - elapsed_ms
+        
         if self.time_left <= 0:
             self.time_left = 0
             self.timer.stop()
             self.hide()
-            # print("Spike Timer: Timer finished")
-            # Call callback function
             if self.on_timer_finished:
                 self.on_timer_finished()
+                
         self.update_display()
         
     def update_display(self):
-        """Update display"""
-        seconds = self.time_left // 1000
-        milliseconds = (self.time_left % 1000) // 10  # Salise (0-99)
-        self.label.setText(f"{seconds:02d}:{milliseconds:02d}")
+        self.update() # Trigger paintEvent
         
     def paintEvent(self, event):
-        """Draw background"""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         
-        # Black background (transparent)
-        painter.setBrush(QBrush(QColor(0, 0, 0, 180)))  # 70% transparency
-        painter.setPen(QPen(Qt.NoPen))
-        painter.drawRect(self.rect())
+        rect = self.rect()
         
-    def stop_timer(self):
-        """Stop timer"""
-        self.timer.stop()
-        self.hide()
-        # print("Spike Timer Window: Hidden")
+        # 1. Background (Dark Gradient)
+        # Alpha bumped to 255 as we disabled TranslucentBackground
+        gradient = QLinearGradient(0, 0, 0, self.height())
+        gradient.setColorAt(0, QColor(20, 20, 20, 255))
+        gradient.setColorAt(1, QColor(40, 40, 40, 255))
+        
+        painter.setBrush(QBrush(gradient))
+        painter.setPen(QPen(QColor(60, 60, 60), 1))
+        painter.drawRoundedRect(rect.adjusted(1, 1, -1, -1), 10, 10)
+        
+        # 2. Progress Bar Background
+        bar_height = 4
+        bar_y = self.height() - 8
+        painter.setBrush(QColor(60, 60, 60))
+        painter.setPen(Qt.NoPen)
+        painter.drawRoundedRect(10, bar_y, self.width() - 20, bar_height, 2, 2)
+        
+        # 3. Progress Bar Fill & Color Logic
+        progress_pct = self.time_left / self.total_time
+        fill_width = (self.width() - 20) * progress_pct
+        
+        # Dynamic Color
+        if self.time_left > 7000:
+            main_color = QColor("#00cc66") # Green
+        elif self.time_left > 3500:
+            main_color = QColor("#ecc94b") # Yellow
+        else:
+            main_color = QColor("#f56565") # Red
+            
+        painter.setBrush(main_color)
+        painter.drawRoundedRect(10, bar_y, int(fill_width), bar_height, 2, 2)
+        
+        # 4. Text - "SPIKE" Label
+        painter.setPen(QColor(180, 180, 180))
+        painter.setFont(QFont("Segoe UI", 8, QFont.Bold))
+        painter.drawText(QRectF(10, 5, self.width()-20, 20), Qt.AlignLeft | Qt.AlignVCenter, "SPIKE TIMEOUT")
+        
+        # 5. Text - Time
+        seconds = self.time_left // 1000
+        ms_remainder = self.time_left % 1000
+        # Convert ms to 0-60 scale (frames-like)
+        frames = int((ms_remainder / 1000) * 60)
+        time_str = f"{seconds:02d}.{frames:02d}"
+        
+        painter.setPen(QColor(255, 255, 255))
+        painter.setFont(QFont("Consolas", 20, QFont.Bold))
+        # Add glow effect hint by drawing delicately? (Optional/Expensive, stuck to simple clean text)
+        painter.drawText(QRectF(0, 5, self.width(), 40), Qt.AlignCenter, time_str)
+        
