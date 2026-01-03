@@ -10,6 +10,21 @@ Thanks for the video, KainX
 
 # Update Notes:
 
+**Version 2.3**
+User Interface Overhaul We have introduced a completely new, professional-grade Graphical User Interface (GUI). The design is now softer, more modern, and streamlined to improve user experience and visual comfort.
+
+Performance Optimization The screen capture mechanism has been heavily optimized. You will notice significantly improved performance with lower latency and reduced CPU/GPU usage.
+
+Bug Fixes & Improvements
+
+Aim Stability: Fixed the issue causing the aim to shake or jitter. Targeting is now much smoother and more precise.
+
+Spike Timer Accuracy: The issue regarding the Spike Timer has been resolved. The countdown is now perfectly synced and accurate.
+
+New Features
+
+Configuration System: Added a brand new Config System. You can now save your custom settings, create different profiles, and load them instantly whenever needed.
+
 *Version 1.3*
 - Added 'tcp_nodelay' to the TCP connection protocol
 - Added 3 preset weapon configs to the Triggerbot page (Sheriff, Vandal, Ghost)
@@ -102,4 +117,5 @@ Communication between the computers is handled through a custom TCP protocol on 
 
 
 This is a defendingstore.com project.
+
 
