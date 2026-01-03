@@ -31,11 +31,12 @@ def get_global_server_info():
 
 
 class AimTCPClient:
-    """TCP Client that uses global configuration"""
+    """TCP UDP Client that uses global configuration"""
     
     def __init__(self, host=None, port=None):
         # Use global configuration
         self.socket = None
+        self.udp_socket = None
         self.connected = False
         self.last_connect_attempt = 0
         self.connect_cooldown = 0.1
@@ -50,7 +51,7 @@ class AimTCPClient:
         return _global_port
     
     def connect(self):
-        """Connect to the TCP server"""
+        """Connect to the TCP server and initialize UDP"""
         with self.connection_lock:
             current_time = time.time()
             if current_time - self.last_connect_attempt < self.connect_cooldown:
@@ -60,41 +61,54 @@ class AimTCPClient:
             
             try:
                 if self.socket:
-                    try:
-                        self.socket.close()
-                    except:
-                        pass
+                    try: self.socket.close()
+                    except: pass
+                if self.udp_socket:
+                    try: self.udp_socket.close()
+                    except: pass
                 
+                # TCP Connection
                 self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                
-                # --- BURAYA EKLENDİ (EN ÖNEMLİ YER) ---
-                # Gönderdiğin fare hareketlerinin beklemeden anında gitmesini sağlar.
                 self.socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-                # --------------------------------------
-
                 self.socket.settimeout(0.5)
                 self.socket.connect((self.host, self.port))
                 self.socket.settimeout(None)
+                
+                # UDP Connection
+                self.udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                
                 self.connected = True
                 return True
             except Exception:
                 self.connected = False
                 if self.socket:
-                    try:
-                        self.socket.close()
-                    except:
-                        pass
+                    try: self.socket.close()
+                    except: pass
                     self.socket = None
+                if self.udp_socket:
+                    try: self.udp_socket.close()
+                    except: pass
+                    self.udp_socket = None
                 return False
     
     def send_movement(self, x, y):
-        """Send movement command"""
+        """Send movement command via UDP if available"""
         if not self.connected:
             if not self.connect():
                 return False
         
         try:
             message = f"hareket+{x},{y}\n"
+            
+            # UDP Priority for movement
+            if self.udp_socket:
+                try:
+                    self.udp_socket.sendto(message.encode('utf-8'), (self.host, self.port))
+                    return True
+                except:
+                    pass
+            
+            # Fallback to TCP
             with self.connection_lock:
                 if self.socket:
                     self.socket.send(message.encode('utf-8'))
@@ -103,10 +117,8 @@ class AimTCPClient:
         except Exception:
             self.connected = False
             if self.socket:
-                try:
-                    self.socket.close()
-                except:
-                    pass
+                try: self.socket.close()
+                except: pass
                 self.socket = None
             return False
     
@@ -148,9 +160,26 @@ class AimTCPClient:
         """Disconnect from server"""
         with self.connection_lock:
             if self.socket:
-                try:
-                    self.socket.close()
-                except:
-                    pass
+                try: self.socket.close()
+                except: pass
                 self.socket = None
+            if self.udp_socket:
+                try: self.udp_socket.close()
+                except: pass
+                self.udp_socket = None
             self.connected = False
+
+# Global singleton instance
+_global_tcp_client = None
+_client_lock = threading.Lock()
+
+def get_global_tcp_client():
+    """
+    Get or create the global TCP client instance.
+    This ensures all parts of the app use the same connection.
+    """
+    global _global_tcp_client
+    with _client_lock:
+        if _global_tcp_client is None:
+            _global_tcp_client = AimTCPClient()
+        return _global_tcp_client

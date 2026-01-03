@@ -9,7 +9,7 @@ import socket
 import threading
 import time
 from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
-                             QPushButton, QLineEdit, QApplication, QMessageBox, QProgressBar)
+                             QPushButton, QLineEdit, QApplication, QMessageBox, QProgressBar, QFrame)
 from PyQt5.QtCore import Qt, pyqtSignal, QTimer, QThread, pyqtSlot
 from PyQt5.QtGui import QFont, QPalette, QColor, QMovie
 import re
@@ -113,110 +113,99 @@ class ServerConnectionDialog(QDialog):
         self.selected_ip = '127.0.0.1'  # Default IP
         self.scanner = None
         self.setup_ui()
-        self.setup_style()
         self.center_on_screen()
         self.start_scanning()
     
     def setup_ui(self):
         """UI setup - Loading screen"""
-        self.setWindowTitle("Searching for Server...")
-        self.setFixedSize(380, 280)  # Smaller size
+        self.setWindowTitle("Connecting...")
+        self.setFixedSize(400, 300)
         # Borderless window
         self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
+        self.setAttribute(Qt.WA_TranslucentBackground)
         
-        # Main layout
-        layout = QVBoxLayout()
-        layout.setSpacing(15)  # Smaller spacing
-        layout.setContentsMargins(30, 25, 30, 25)  # Smaller margins
+        # Main Layout inside a frame for styling
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        
+        self.frame = QFrame()
+        self.frame.setObjectName("mainFrame")
+        self.frame.setStyleSheet("""
+            QFrame#mainFrame {
+                background-color: #121212;
+                border: 1px solid #333;
+                border-radius: 15px;
+            }
+        """)
+        
+        layout = QVBoxLayout(self.frame)
+        layout.setSpacing(20)
+        layout.setContentsMargins(40, 40, 40, 40)
+        
+        # Icon/Logo area
+        logo_label = QLabel("📡")
+        logo_label.setAlignment(Qt.AlignCenter)
+        logo_label.setStyleSheet("font-size: 48px; background: transparent;")
         
         # Title label
         self.title_label = QLabel("SEARCHING FOR SERVER")
         self.title_label.setAlignment(Qt.AlignCenter)
-        self.title_label.setObjectName("titleLabel")
+        self.title_label.setStyleSheet("""
+            color: #fff;
+            font-size: 16px;
+            font-weight: 900;
+            letter-spacing: 2px;
+            background: transparent;
+        """)
         
         # Status message
         self.status_label = QLabel("Scanning network...")
         self.status_label.setAlignment(Qt.AlignCenter)
-        self.status_label.setObjectName("statusLabel")
-        self.status_label.setWordWrap(True)
+        self.status_label.setStyleSheet("""
+            color: #888;
+            font-size: 13px;
+            background: transparent;
+        """)
         
         # Progress bar
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
-        self.progress_bar.setObjectName("progressBar")
+        self.progress_bar.setFixedHeight(6)
+        self.progress_bar.setTextVisible(False)
+        self.progress_bar.setStyleSheet("""
+            QProgressBar {
+                background-color: #1a1a1a;
+                border-radius: 3px;
+            }
+            QProgressBar::chunk {
+                background-color: #00cc66;
+                border-radius: 3px;
+            }
+        """)
         
-        # Timer for animation effect
+        # Animation setup
         self.animation_timer = QTimer()
         self.animation_timer.timeout.connect(self.animate_title)
         self.animation_timer.start(500)
         self.dot_count = 0
         
-        # Add widgets to layout
+        # Add widgets
         layout.addStretch()
+        layout.addWidget(logo_label)
         layout.addWidget(self.title_label)
         layout.addWidget(self.status_label)
+        layout.addSpacing(10)
         layout.addWidget(self.progress_bar)
         layout.addStretch()
         
-        self.setLayout(layout)
+        main_layout.addWidget(self.frame)
     
     def animate_title(self):
         """Title animation"""
         self.dot_count = (self.dot_count + 1) % 4
         dots = "." * self.dot_count
         self.title_label.setText(f"SEARCHING FOR SERVER{dots}")
-    
-    def setup_style(self):
-        """Modern splash screen tema stilleri (Qt-compatible)"""
-        self.setStyleSheet("""
-            QDialog {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 rgba(30, 30, 30, 255), stop:0.5 rgba(40, 40, 40, 255), stop:1 rgba(35, 35, 35, 255));
-                border-radius: 20px;
-                border: 3px solid rgba(120, 120, 120, 0.6);
-            }
-            
-            #titleLabel {
-                color: #a0a0a0;
-                font-size: 18px;
-                font-weight: bold;
-                font-family: 'Arial Black', 'Arial';
-                padding: 8px;
-                background: transparent;
-                border: none;
-            }
-            
-            #statusLabel {
-                color: rgba(255, 255, 255, 0.9);
-                font-size: 12px;
-                font-family: 'Roboto', 'Arial';
-                padding: 5px;
-                background: transparent;
-                border: none;
-                min-height: 25px;
-            }
-            
-            #progressBar {
-                border: 2px solid rgba(100, 100, 100, 0.4);
-                border-radius: 8px;
-                background: rgba(50, 50, 50, 150);
-                text-align: center;
-                color: white;
-                font-weight: bold;
-                font-size: 10px;
-                height: 18px;
-            }
-            
-            #progressBar::chunk {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 rgba(110, 110, 110, 255), 
-                    stop:0.5 rgba(120, 120, 120, 255),
-                    stop:1 rgba(130, 130, 130, 255));
-                border-radius: 6px;
-                margin: 1px;
-            }
-        """)
     
     def center_on_screen(self):
         """Center dialog on screen"""
@@ -243,14 +232,14 @@ class ServerConnectionDialog(QDialog):
     def on_connection_found(self, ip):
         """When connection is found"""
         self.animation_timer.stop()
-        self.title_label.setText("SERVER FOUND!")
+        self.title_label.setText("SERVER FOUND")
+        self.title_label.setStyleSheet("color: #00cc66; font-size: 16px; font-weight: 900; letter-spacing: 2px;")
+        self.status_label.setText(f"Connected to {ip}")
         self.selected_ip = ip
         self.connection_accepted.emit(ip)
         
-        print(f"Server found: {ip}")
-        
         # Close dialog after a short delay
-        QTimer.singleShot(1500, self.accept)
+        QTimer.singleShot(1000, self.accept)
     
     @pyqtSlot(bool)
     def on_scan_completed(self, success):
@@ -258,9 +247,10 @@ class ServerConnectionDialog(QDialog):
         if not success:
             self.animation_timer.stop()
             self.title_label.setText("SERVER NOT FOUND")
-            self.status_label.setText("Wait for manual IP entry...")
+            self.title_label.setStyleSheet("color: #e53e3e; font-size: 16px; font-weight: 900; letter-spacing: 2px;")
+            self.status_label.setText("Switching to manual entry...")
             # Show dialog for manual IP entry
-            QTimer.singleShot(2000, lambda: self.show_manual_input())
+            QTimer.singleShot(1500, lambda: self.show_manual_input())
     
     def show_manual_input(self):
         """Show manual IP entry dialog"""
@@ -268,275 +258,181 @@ class ServerConnectionDialog(QDialog):
     
     def setup_manual_input_ui(self):
         """Change UI for manual IP entry"""
-        # Clear existing widgets
-        layout = self.layout()
-        for i in reversed(range(layout.count())):
-            widget = layout.itemAt(i).widget()
-            if widget:
-                widget.setParent(None)
+        # Clear existing widgets in the frame layout
+        layout = self.frame.layout()
+        while layout.count():
+            item = layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
         
-        # Adjust layout spacing
-        layout.setSpacing(12)  # Smaller spacing
-        layout.setContentsMargins(25, 20, 25, 20)  # Smaller margins
+        layout.setSpacing(15)
+        layout.setContentsMargins(40, 30, 40, 30)
         
-        # New UI elements
-        self.title_label = QLabel("MANUAL IP ENTRY")
-        self.title_label.setAlignment(Qt.AlignCenter)
-        self.title_label.setObjectName("titleLabel")
+        # Header
+        title = QLabel("MANUAL CONNECTION")
+        title.setAlignment(Qt.AlignCenter)
+        title.setStyleSheet("""
+            color: #fff;
+            font-size: 16px;
+            font-weight: 900;
+            letter-spacing: 1px;
+        """)
         
-        self.instruction_label = QLabel("Enter server IP address:")
-        self.instruction_label.setAlignment(Qt.AlignCenter)
-        self.instruction_label.setObjectName("instructionLabel")
+        desc = QLabel("Enter server IP address manually")
+        desc.setAlignment(Qt.AlignCenter)
+        desc.setStyleSheet("color: #666; font-size: 12px; margin-bottom: 10px;")
         
-        # IP input field
+        # IP Input
         self.ip_input = QLineEdit()
-        self.ip_input.setPlaceholderText("Example: 192.168.1.100")
-        self.ip_input.setText("127.0.0.1")  # Default value
-        self.ip_input.setObjectName("ipInput")
-        self.ip_input.setMaxLength(15)  # Sufficient for IP address
+        self.ip_input.setPlaceholderText("e.g. 192.168.1.100")
+        self.ip_input.setText("127.0.0.1")
+        self.ip_input.setAlignment(Qt.AlignCenter)
+        self.ip_input.setMaxLength(15)
+        self.ip_input.setStyleSheet("""
+            QLineEdit {
+                background-color: #1a1a1a;
+                border: 1px solid #333;
+                border-radius: 8px;
+                color: #fff;
+                padding: 12px;
+                font-family: monospace;
+                font-weight: bold;
+                font-size: 14px;
+            }
+            QLineEdit:focus {
+                border: 1px solid #00cc66;
+                background-color: #222;
+            }
+        """)
         
         # Buttons
-        button_layout = QHBoxLayout()
-        button_layout.setSpacing(10)  # Smaller button spacing
+        btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(10)
+        
+        self.cancel_button = QPushButton("EXIT")
+        self.cancel_button.setCursor(Qt.PointingHandCursor)
+        self.cancel_button.setStyleSheet("""
+            QPushButton {
+                background-color: transparent;
+                border: 1px solid #333;
+                border-radius: 6px;
+                color: #888;
+                padding: 10px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #1a1a1a;
+                color: #fff;
+                border: 1px solid #555;
+            }
+        """)
+        self.cancel_button.clicked.connect(self.reject)
         
         self.connect_button = QPushButton("CONNECT")
-        self.connect_button.setObjectName("connectButton")
+        self.connect_button.setCursor(Qt.PointingHandCursor)
+        self.connect_button.setStyleSheet("""
+            QPushButton {
+                background-color: #00cc66;
+                border: none;
+                border-radius: 6px;
+                color: #000;
+                padding: 10px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #00e673;
+            }
+            QPushButton:pressed {
+                background-color: #00b359;
+            }
+        """)
         self.connect_button.clicked.connect(self.validate_and_connect)
         
-        self.cancel_button = QPushButton("CANCEL")
-        self.cancel_button.setObjectName("cancelButton")
-        self.cancel_button.clicked.connect(self.handle_cancel)
+        btn_layout.addWidget(self.cancel_button)
+        btn_layout.addWidget(self.connect_button)
         
-        button_layout.addWidget(self.cancel_button)
-        button_layout.addWidget(self.connect_button)
+        # Status/Error Label (hidden by default)
+        self.error_label = QLabel("")
+        self.error_label.setAlignment(Qt.AlignCenter)
+        self.error_label.setStyleSheet("color: #e53e3e; font-size: 11px; font-weight: bold;")
         
-        # Add widgets to layout
         layout.addStretch()
-        layout.addWidget(self.title_label)
-        layout.addWidget(self.instruction_label)
+        layout.addWidget(title)
+        layout.addWidget(desc)
         layout.addWidget(self.ip_input)
-        layout.addLayout(button_layout)
+        layout.addWidget(self.error_label)
+        layout.addLayout(btn_layout)
         layout.addStretch()
         
-        # Connect with Enter key
+        # Connect enter key
         self.ip_input.returnPressed.connect(self.validate_and_connect)
         self.ip_input.setFocus()
-        
-        # Style update
-        self.update_manual_input_style()
     
     def validate_and_connect(self):
-        """Validate IP address and test connection"""
+        """Validate IP and connect"""
         ip_text = self.ip_input.text().strip()
         
-        # Simple IP validation
         if not self.is_valid_ip(ip_text):
-            self.show_error_message("Invalid IP address! Try again:")
+            self.show_error("Invalid IP Format")
             return
+            
+        self.error_label.setText("Testing connection...")
+        self.error_label.setStyleSheet("color: #ecc94b; font-size: 11px; font-weight: bold;")
+        self.connect_button.setEnabled(False)
+        self.ip_input.setEnabled(False)
         
-        # Testing connection message
-        self.instruction_label.setText(f"Testing {ip_text}...")
-        self.instruction_label.setStyleSheet("""
-            color: #ffd93d; 
-            font-weight: bold;
-            font-size: 13px;
-            font-family: 'Roboto', 'Arial';
-            padding: 8px 5px;
-            background: transparent;
-            border: none;
-            margin-bottom: 5px;
-        """)
-        self.connect_button.setEnabled(False)  # Disable button
-        
-        # Test connection with a short delay (for UI update)
         QTimer.singleShot(100, lambda: self.perform_connection_test(ip_text))
-    
+        
     def perform_connection_test(self, ip_text):
-        """Perform actual connection test"""
-        # Test connection
         if self.test_connection_to_ip(ip_text):
-            # Connection successful
-            self.instruction_label.setText(f"Connection to {ip_text} successful!")
-            self.instruction_label.setStyleSheet("""
-                color: #51cf66; 
-                font-weight: bold;
-                font-size: 13px;
-                font-family: 'Roboto', 'Arial';
-                padding: 8px 5px;
-                background: transparent;
-                border: none;
-                margin-bottom: 5px;
-            """)
+            self.error_label.setText("Success!")
+            self.error_label.setStyleSheet("color: #00cc66; font-size: 11px; font-weight: bold;")
             self.selected_ip = ip_text
-            self.connection_accepted.emit(self.selected_ip)
-            # Close after a short delay
-            QTimer.singleShot(1000, self.accept)
+            self.connection_accepted.emit(ip_text)
+            QTimer.singleShot(500, self.accept)
         else:
-            # Connection failed
-            self.show_error_message(f"Cannot connect to {ip_text}! Enter new IP:")
-            self.connect_button.setEnabled(True)  # Re-enable button
+            self.show_error("Connection Failed")
+            self.connect_button.setEnabled(True)
+            self.ip_input.setEnabled(True)
+            self.ip_input.setFocus()
     
+    def show_error(self, msg):
+        self.error_label.setText(msg)
+        self.error_label.setStyleSheet("color: #e53e3e; font-size: 11px; font-weight: bold;")
+        
+        # Shake animation using property animation usually, but we'll stick to simple flash
+        # (Could implement QPropertyAnimation on the frame position for a shake if requested)
+
     def test_connection_to_ip(self, ip, port=1515, timeout=3):
         """Test connection to specified IP address"""
         try:
             import socket
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            
-            # --- TCP_NODELAY EKLENDI ---
-            # Burada da manuel giriş testi için gecikmeyi önler
             sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-            # ---------------------------
-
             sock.settimeout(timeout)
             result = sock.connect_ex((ip, port))
             sock.close()
             return result == 0
         except:
             return False
-    
-    def show_error_message(self, message):
-        """Show error message and re-enable IP entry"""
-        self.instruction_label.setText(message)
-        self.instruction_label.setStyleSheet("""
-            color: #ff6b6b; 
-            font-weight: bold;
-            font-size: 13px;
-            font-family: 'Roboto', 'Arial';
-            padding: 8px 5px;
-            background: transparent;
-            border: none;
-            margin-bottom: 5px;
-        """)
-        self.ip_input.setFocus()
-        self.ip_input.selectAll()
-        self.connect_button.setEnabled(True)  # Re-enable button
-        # Return to normal color after 4 seconds
-        QTimer.singleShot(4000, self.reset_instruction_style)
-    
-    def reset_instruction_style(self):
-        """Return instruction label to normal style"""
-        self.instruction_label.setText("Enter server IP address:")
-        self.instruction_label.setStyleSheet("""
-            color: rgba(255, 255, 255, 0.9);
-            font-size: 13px;
-            font-family: 'Roboto', 'Arial';
-            padding: 8px 5px;
-            background: transparent;
-            border: none;
-            margin-bottom: 5px;
-        """)
-    
-    def handle_cancel(self):
-        """When cancel button is pressed"""
-        self.show_error_message("Cancelled! Enter new IP or close:")
-        # Change cancel button to close button
-        self.cancel_button.setText("CLOSE")
-        self.cancel_button.clicked.disconnect()
-        self.cancel_button.clicked.connect(self.reject)
-    
+            
     def is_valid_ip(self, ip):
         """Check if IP address is valid"""
         import re
         pattern = r'^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$'
         return re.match(pattern, ip) is not None
-    
-    def update_manual_input_style(self):
-        """Style update for manual entry"""
-        self.setStyleSheet(self.styleSheet() + """
-            #instructionLabel {
-                color: rgba(255, 255, 255, 0.9);
-                font-size: 13px;  /* Smaller font */
-                font-family: 'Roboto', 'Arial';
-                padding: 8px 5px;  /* Smaller padding */
-                background: transparent;
-                border: none;
-                margin-bottom: 5px;  /* Smaller margin */
-            }
-            
-            #ipInput {
-                border: 2px solid rgba(120, 120, 120, 0.6);
-                border-radius: 6px;  /* Smaller radius */
-                background: rgba(50, 50, 50, 150);
-                color: white;
-                font-size: 14px;  /* Smaller font */
-                font-family: 'Roboto', 'Arial';
-                padding: 10px;  /* Smaller padding */
-                text-align: center;
-                margin: 5px 15px;  /* Smaller margin */
-                min-height: 16px;  /* Smaller height */
-            }
-            
-            #ipInput:focus {
-                border: 2px solid rgba(120, 120, 120, 0.8);
-                background: rgba(60, 60, 60, 180);
-            }
-            
-            #connectButton {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 rgba(110, 110, 110, 200), stop:1 rgba(90, 90, 90, 200));
-                border: 2px solid rgba(120, 120, 120, 0.8);
-                border-radius: 6px;  /* Smaller radius */
-                color: white;
-                font-size: 12px;  /* Smaller font */
-                font-weight: bold;
-                font-family: 'Arial';
-                padding: 8px 20px;  /* Smaller padding */
-                margin: 5px 3px;  /* Smaller margin */
-                min-width: 70px;  /* Smaller width */
-                min-height: 28px;  /* Smaller height */
-            }
-            
-            #connectButton:hover {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 rgba(130, 130, 130, 220), stop:1 rgba(110, 110, 110, 220));
-            }
-            
-            #connectButton:pressed {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 rgba(90, 90, 90, 200), stop:1 rgba(70, 70, 70, 200));
-            }
-            
-            #cancelButton {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 rgba(70, 70, 70, 200), stop:1 rgba(50, 50, 50, 200));
-                border: 2px solid rgba(100, 100, 100, 0.8);
-                border-radius: 6px;  /* Smaller radius */
-                color: white;
-                font-size: 12px;  /* Smaller font */
-                font-weight: bold;
-                font-family: 'Arial';
-                padding: 8px 20px;  /* Smaller padding */
-                margin: 5px 3px;  /* Smaller margin */
-                min-width: 70px;  /* Smaller width */
-                min-height: 28px;  /* Smaller height */
-            }
-            
-            #cancelButton:hover {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 rgba(90, 90, 90, 220), stop:1 rgba(70, 70, 70, 220));
-            }
-            
-            #cancelButton:pressed {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 rgba(50, 50, 50, 200), stop:1 rgba(30, 30, 30, 200));
-            }
-        """)
-    
+
     def closeEvent(self, event):
-        """Dialog closing event"""
         if self.scanner and self.scanner.isRunning():
             self.scanner.terminate()
             self.scanner.wait()
         event.accept()
     
     def get_selected_ip(self):
-        """Get selected IP address"""
         return self.selected_ip
     
     def keyPressEvent(self, event):
-        """Key press events"""
         if event.key() == Qt.Key_Escape:
-            # Don't allow closing with Escape
             return
         super().keyPressEvent(event)
 
@@ -566,13 +462,4 @@ if __name__ == "__main__":
     # Test dialog
     app = QApplication(sys.argv)
     ip = show_connection_dialog()
-    print(f"Selected IP: {ip}")
-    
-    # -------------------------------------------------------------
-    # ÖNEMLİ: BU IP'Yİ ALDIKTAN SONRA ANA PROGRAMINDA
-    # ŞÖYLE BAĞLANMALISIN (ASIL HIZ FARKI BURADA OLACAK):
-    # -------------------------------------------------------------
-    # main_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    # main_sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1) # <--- Kritik Satır
-    # main_sock.connect((ip, 1515))
-    # ... mesaj gönder ...
+    print(f"Selected IP: {ip}")    

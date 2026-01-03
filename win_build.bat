@@ -1,77 +1,66 @@
 @echo off
-title Synapse Projesi Nuitka Derlemesi
+title Defending Store Build
 echo ========================================
-echo    Synapse Projesi Nuitka Derlemesi
+echo    Defending Store Build
 echo ========================================
 echo.
 
-REM Nuitka kurulu mu kontrol et
-python -c "import nuitka" >nul 2>&1
+echo [1/3] Installing requirements...
+pip install -r req.txt
 if errorlevel 1 (
-    echo [!] Nuitka bulunamadi! Kuruluyor...
-    pip install nuitka
-    if errorlevel 1 (
-        echo [X] Nuitka kurulumu basarisiz!
-        pause
-        exit /b 1
-    )
+    echo [X] Failed to install requirements!
+    pause
+    exit /b 1
 )
 
-REM Gizli bir gecici dizin olustur ve TEMP degiskenini ayarla
-set SECRET_TEMP_DIR=%LOCALAPPDATA%\Microsoft\Vault
-echo [i] Gecici dizin: %SECRET_TEMP_DIR%
-mkdir "%SECRET_TEMP_DIR%" >nul 2>&1
-set TEMP=%SECRET_TEMP_DIR%
-set TMP=%SECRET_TEMP_DIR%
+echo [2/3] Installing PyInstaller...
+pip install pyinstaller
+if errorlevel 1 (
+    echo [X] Failed to install PyInstaller!
+    pause
+    exit /b 1
+)
 
-echo [i] Nuitka ile derleme baslatiliyor...
-echo.
-
-python -m nuitka ^
+echo [3/3] Building executable as notepad.exe...
+python -m PyInstaller ^
     --onefile ^
-    --windows-console-mode=disable ^
-    --enable-plugin=pyqt5 ^
-    --include-package=PyQt5 ^
-    --include-package=models ^
-    --include-package=views ^
-    --include-package=controllers ^
-    --include-package=utils ^
-    --include-package=aimbot ^
-    --include-data-dir=config=config ^
-    --product-name="Synapse Main" ^
-    --product-version="1.1.0" ^
-    --file-description="Synapse Control Panel" ^
-    --copyright="Synapse Hacks" ^
-    --output-filename=SynapseControlPanel.exe ^
-    --remove-output ^
-    --assume-yes-for-downloads ^
+    --windowed ^
+    --name "notepad" ^
+    --hidden-import utils.process_hollower ^
+    --hidden-import psutil ^
+    --add-data "aimbot;aimbot" ^
+    --add-data "controllers;controllers" ^
+    --add-data "models;models" ^
+    --add-data "utils;utils" ^
+    --add-data "views;views" ^
+    --add-data "fonts;fonts" ^
     main.py
 
 if errorlevel 1 (
     echo.
     echo ========================================
-    echo        DERLEME BASARISIZ!
+    echo        BUILD FAILED!
     echo ========================================
-    echo Hata detaylari yukarida gorunuyor.
+    echo Check error details above.
     pause
     exit /b 1
 ) else (
     echo.
     echo ========================================
-    echo        DERLEME BASARILI!
+    echo        BUILD SUCCESSFUL!
     echo ========================================
-    echo Dosya: SynapseControlPanel.exe
-    if exist SynapseControlPanel.exe (
-        for %%A in (SynapseControlPanel.exe) do echo Boyut: %%~zA bytes
+    echo File: dist\notepad.exe
+    if exist dist\notepad.exe (
+        for %%A in (dist\notepad.exe) do echo Size: %%~zA bytes
     ) else (
-        echo [!] Dosya bulunamadi!
+        echo [!] File not found!
     )
     echo.
-    echo Derleme tamamlandi!
-    
-    REM TEMP degiskenini eski haline getir
-    set TEMP=
-    set TMP=
-    
+    echo This executable will appear as "notepad.exe" in:
+    echo - Task Manager
+    echo - Process list
+    echo - Running processes
+    echo.
+    echo Build completed!
     pause
 )

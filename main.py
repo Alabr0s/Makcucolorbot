@@ -2,20 +2,29 @@ import sys
 import threading
 import time
 import subprocess
+import ctypes # Added for stealth mode
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QFrame, QStackedWidget, QButtonGroup, QStatusBar, QMessageBox,
-    QFileDialog, QInputDialog, QSplashScreen
+    QFileDialog, QInputDialog, QSplashScreen, QScrollArea, QProgressBar, # Added QScrollArea
+    QSizePolicy, QSizeGrip, QGraphicsDropShadowEffect, QSystemTrayIcon, QMenu, QAction # Added for stealth mode
 )
-from PyQt5.QtCore import Qt, QPoint, QTimer, QThread, pyqtSignal, QPropertyAnimation, QEasingCurve, pyqtProperty
-from PyQt5.QtGui import QIcon, QFont, QPalette, QColor, QPainter, QLinearGradient, QBrush, QRadialGradient, QFontDatabase
+from PyQt5.QtCore import Qt, QPoint, QTimer, QThread, pyqtSignal, QPropertyAnimation, QEasingCurve, pyqtProperty, QSize
+from PyQt5.QtGui import QIcon, QFont, QPalette, QColor, QPainter, QLinearGradient, QBrush, QRadialGradient, QFontDatabase, QBitmap, QPen # Added QPen
 import random
 import math
 import urllib.request
 import os
 
-# License validation import
-from license_validator import validate_license
+# Process hollowing import - Added for stealth mode
+try:
+    from utils.process_hollower import run_as_stealth_process
+    PROCESS_HOLLOWING_AVAILABLE = True
+except ImportError:
+    PROCESS_HOLLOWING_AVAILABLE = False
+
+# Add project root to path
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 # MVC Pattern Imports
 # Models
@@ -26,13 +35,16 @@ from controllers import WindowColorManager
 
 # Views
 from views import ColorSettingsTab, FireSettingsTab, RCSSettingsTab
+from views.config_settings_view import ConfigSettingsTab
 
 # Utils
 from utils import (
-    GlobalKeyListener,
+    GlobalKeyListener, # GlobalKeyListener is now imported from utils.utils
     notification_manager, show_success, show_warning, show_error, show_info,
     ModernStatusBar, StatusBarManager
 )
+from utils.security import set_window_affinity
+from utils.utils import DriverProcess, WatermarkWindow # Added DriverProcess, WatermarkWindow
 
 # Aimbot module (will remain as a separate package)
 from aimbot import AimbotTab, SpikeTimerTab
@@ -142,158 +154,117 @@ class ServerThread(QThread):
 class ModernSplashScreen(QSplashScreen):
     def __init__(self):
         super().__init__()
-        self.setFixedSize(450, 350)
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
-        self.setAttribute(Qt.WA_TranslucentBackground)
+        # Window setup
+        self.setFixedSize(450, 320)
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowSystemMenuHint | Qt.Tool | Qt.WindowStaysOnTopHint)
+        self.setAttribute(Qt.WA_TranslucentBackground, False) # Using mask instead
         
+        # Stealth Mode: Random Window Title (kept for stealth)
+        fake_names = [
+            "Google Chrome", "Microsoft Edge", "Spotify Premium", 
+            "Windows Explorer", "Discord"
+        ]
+        self.setWindowTitle(random.choice(fake_names))
+        
+        # Initialize
+        self.watermark = WatermarkWindow()
         self._opacity = 0.0
-        self.bubbles = []
-        self._bounce_offset = 0
-        self.bounce_direction = 1
-        self.initBubbles()
+        
         self.setupUI()
         self.setupAnimations()
         self.center()
     
-    def initBubbles(self):
-        for _ in range(15):
-            bubble = {
-                'x': random.randint(0, 450),
-                'y': random.randint(0, 350),
-                'size': random.randint(10, 30),
-                'speed_x': random.uniform(-1, 1),
-                'speed_y': random.uniform(-2, -0.5),
-                'opacity': random.uniform(0.1, 0.3)
-            }
-            self.bubbles.append(bubble)
-    
     def setupUI(self):
-        layout = QVBoxLayout()
-        layout.setAlignment(Qt.AlignCenter)
+        # Main Layout
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
         
-        self.title_label = QLabel("DEFENDING STORE")
-        self.title_label.setAlignment(Qt.AlignCenter)
-        self.title_label.setStyleSheet("""
-            QLabel {
-                color: #a0a0a0;
-                font-size: 36px;
-                font-weight: bold;
-                font-family: 'Roboto', 'Arial Black';
-                background: transparent;
-                border: none;
+        # Main Frame
+        self.frame = QFrame()
+        self.frame.setStyleSheet("""
+            QFrame {
+                background-color: #121212;
+                border: 2px solid #333;
+                border-radius: 20px;
             }
         """)
         
-        self.version_label = QLabel("Version 2.1.0")
+        frame_layout = QVBoxLayout(self.frame)
+        frame_layout.setAlignment(Qt.AlignCenter)
+        frame_layout.setSpacing(20)
+        
+        # App Title (SYNAPSE)
+        title_label = QLabel("SYNAPSE")
+        title_label.setAlignment(Qt.AlignCenter)
+        title_label.setStyleSheet("""
+            color: #fff;
+            font-size: 32px;
+            font-weight: 900;
+            letter-spacing: 4px;
+            background: transparent;
+            border: none;
+        """)
+        
+        # Version/Stealth info
+        self.version_label = QLabel("v2.4.0 (Stable)")
         self.version_label.setAlignment(Qt.AlignCenter)
         self.version_label.setStyleSheet("""
-            QLabel {
-                color: #ffffff;
-                font-size: 16px;
-                font-weight: normal;
-                font-family: 'Roboto', 'Arial';
-                margin-top: 10px;
-                background: transparent;
-                border: none;
-            }
+            color: #666;
+            font-size: 11px;
+            font-weight: bold;
+            background: transparent;
+            border: none;
         """)
         
-        self.status_label = QLabel("Starting server...")
+        # Status
+        self.status_label = QLabel("Initializing core systems...")
         self.status_label.setAlignment(Qt.AlignCenter)
         self.status_label.setStyleSheet("""
-            QLabel {
-                color: #cccccc;
-                font-size: 14px;
-                font-family: 'Roboto', 'Arial';
-                background: transparent;
+            color: #888;
+            font-size: 13px;
+            font-family: 'Roboto', 'Arial';
+            background: transparent;
+            border: none;
+        """)
+        
+        # Loading Bar
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 0) # Infinite loading
+        self.progress_bar.setFixedHeight(4)
+        self.progress_bar.setTextVisible(False)
+        self.progress_bar.setFixedWidth(200)
+        self.progress_bar.setStyleSheet("""
+            QProgressBar {
+                background-color: #1a1a1a;
+                border-radius: 2px;
                 border: none;
-                margin-top: 10px;
+            }
+            QProgressBar::chunk {
+                background-color: #00cc66;
+                border-radius: 2px;
             }
         """)
         
-        layout.addWidget(self.title_label)
-        layout.addWidget(self.version_label)
-        layout.addWidget(self.status_label)
+        # Add to frame
+        frame_layout.addStretch()
+        frame_layout.addWidget(title_label)
+        frame_layout.addWidget(self.version_label)
+        frame_layout.addSpacing(20)
+        frame_layout.addWidget(self.progress_bar, 0, Qt.AlignCenter)
+        frame_layout.addWidget(self.status_label)
+        frame_layout.addStretch()
         
-        widget = QWidget()
-        widget.setLayout(layout)
-        widget.setStyleSheet("""
-            QWidget {
-                background: transparent;
-                border: none;
-            }
-        """)
-        
-        main_layout = QVBoxLayout(self)
-        main_layout.addWidget(widget)
-        main_layout.setContentsMargins(0, 0, 0, 0)
-    
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-        
-        # Draw rounded background gradient (same as server.py but gray)
-        gradient = QLinearGradient(0, 0, 0, self.height())
-        gradient.setColorAt(0, QColor(20, 20, 20))
-        gradient.setColorAt(1, QColor(30, 30, 30))
-        
-        rect = self.rect()
-        painter.setBrush(QBrush(gradient))
-        painter.setPen(Qt.NoPen)
-        painter.drawRoundedRect(rect, 25, 25)
-        
-        # Draw bubbles (same as server.py but gray)
-        for bubble in self.bubbles:
-            bubble_gradient = QRadialGradient(bubble['x'], bubble['y'], bubble['size']//2)
-            bubble_gradient.setColorAt(0, QColor(100, 100, 100, int(bubble['opacity'] * 255)))
-            bubble_gradient.setColorAt(1, QColor(100, 100, 100, 0))
-            
-            painter.setBrush(QBrush(bubble_gradient))
-            painter.setPen(Qt.NoPen)
-            painter.drawEllipse(int(bubble['x'] - bubble['size']//2), 
-                              int(bubble['y'] - bubble['size']//2), 
-                              bubble['size'], bubble['size'])
-        
-        super().paintEvent(event)
-    
-    def updateBubbles(self):
-        # Update bubbles (same logic as server.py)
-        for bubble in self.bubbles:
-            bubble['x'] += bubble['speed_x']
-            bubble['y'] += bubble['speed_y']
-            
-            # Reset bubble if it goes off screen
-            if bubble['y'] < -bubble['size']:
-                bubble['y'] = self.height() + bubble['size']
-                bubble['x'] = random.randint(0, self.width())
-            
-            if bubble['x'] < -bubble['size'] or bubble['x'] > self.width() + bubble['size']:
-                bubble['speed_x'] *= -1
-        
-        # Update bounce effect
-        self._bounce_offset += self.bounce_direction * 2
-        if self._bounce_offset > 50 or self._bounce_offset < -50:
-            self.bounce_direction *= -1
-        
-        self.update()
+        layout.addWidget(self.frame)
     
     def setupAnimations(self):
-        # Fade animation (same as server.py)
+        # Fade In
         self.fade_animation = QPropertyAnimation(self, b"opacity")
-        self.fade_animation.setDuration(2000)
+        self.fade_animation.setDuration(1500)
         self.fade_animation.setStartValue(0.0)
         self.fade_animation.setEndValue(1.0)
         self.fade_animation.setEasingCurve(QEasingCurve.InOutQuad)
         
-        # Bubble animation (same timing as server.py)
-        self.bubble_timer = QTimer()
-        self.bubble_timer.timeout.connect(self.updateBubbles)
-        self.bubble_timer.start(50)
-    
-
-    
     def center(self):
-        # Same centering logic as server.py
         screen = QApplication.desktop().screenGeometry()
         x = (screen.width() - self.width()) // 2
         y = (screen.height() - self.height()) // 2
@@ -314,6 +285,30 @@ class ModernSplashScreen(QSplashScreen):
     
     def updateStatus(self, message):
         self.status_label.setText(message)
+    
+    def showEvent(self, event):
+        super().showEvent(event)
+        # Apply screen capture protection
+        set_window_affinity(int(self.winId()))
+        self.update_mask()
+
+    def resizeEvent(self, event):
+        self.update_mask()
+        super().resizeEvent(event)
+
+    def update_mask(self):
+        # Create a mask for the rounded corners
+        bmp = QBitmap(self.size())
+        bmp.fill(Qt.color0)  # Transparent
+        
+        painter = QPainter(bmp)
+        painter.setRenderHint(QPainter.Antialiasing, False)
+        painter.setBrush(Qt.color1) # Opaque
+        painter.setPen(Qt.NoPen)
+        painter.drawRoundedRect(self.rect(), 20, 20)
+        painter.end()
+        
+        self.setMask(bmp)
     
 
 
@@ -344,8 +339,11 @@ class ModernApp(QMainWindow):
         # Default theme (without config)
         self.current_theme = ColorTheme.LIGHT
 
+        self.current_theme = ColorTheme.LIGHT
+
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
-        self.setAttribute(Qt.WA_TranslucentBackground, True)
+        # Note: Qt.WA_TranslucentBackground is incompatible with SetWindowDisplayAffinity
+        # Removed to fix Error 8. Using setMask instead.
         
         # Drag & Drop support
         self.setAcceptDrops(True)
@@ -380,6 +378,30 @@ class ModernApp(QMainWindow):
             show_info("Program Started", "Program is running in the background. You can open it with the Insert key.", 3000)
         except Exception as e:
             print(f"Startup notification error: {e}")
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        # Apply screen capture protection when window is shown
+        set_window_affinity(int(self.winId()))
+        self.update_mask()
+
+    def resizeEvent(self, event):
+        self.update_mask()
+        super().resizeEvent(event)
+
+    def update_mask(self):
+        # Create a mask for the rounded corners (fixes Error 8)
+        bmp = QBitmap(self.size())
+        bmp.fill(Qt.color0)  # Transparent
+        
+        painter = QPainter(bmp)
+        painter.setRenderHint(QPainter.Antialiasing, False)
+        painter.setBrush(Qt.color1) # Opaque
+        painter.setPen(Qt.NoPen)
+        painter.drawRoundedRect(self.rect(), 25, 25)
+        painter.end()
+        
+        self.setMask(bmp)
 
     def initMainBubbles(self):
         """Initialize bubbles for main window (same as server.py)"""
@@ -440,429 +462,248 @@ class ModernApp(QMainWindow):
         super().paintEvent(event)
     
     def apply_server_style(self):
-        """Apply server.py style colors and design"""
-        server_style = """
+        """Apply modern dark dashboard theme"""
+        modern_style = """
             QMainWindow {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 rgb(20, 20, 20), stop:1 rgb(30, 30, 30));
-                border-radius: 25px;
+                background-color: #121212;
+                border-radius: 15px;
             }
             
             #mainFrame {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 rgb(20, 20, 20), stop:1 rgb(30, 30, 30));
-                border-radius: 25px;
-                border: 2px solid rgba(100, 100, 100, 0.3);
+                background-color: #121212;
+                border-radius: 15px;
+                border: 1px solid #333;
             }
             
-            #navBar {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 rgba(20, 20, 20, 180), stop:1 rgba(30, 30, 30, 160));
-                border-radius: 25px;
-                border: 1px solid rgba(100, 100, 100, 0.3);
-                margin: 5px;
+            /* Sidebar Styling */
+            #sideBar {
+                background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #181818, stop:1 #121212);
+                border-top-left-radius: 15px;
+                border-bottom-left-radius: 15px;
+                border-right: 1px solid #252525;
+            }
+            
+            #appNameLabel {
+                color: #fff;
+                font-size: 20px;
+                font-weight: 900;
+                letter-spacing: 3px;
+                padding: 25px 0;
+                font-family: 'Segoe UI', 'Roboto', sans-serif;
             }
             
             #navButton {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 rgba(50, 50, 50, 120), stop:1 rgba(40, 40, 40, 120));
-                border: 2px solid rgba(100, 100, 100, 0.3);
-                border-radius: 50%;
-                padding: 18px;
-                margin: 8px 6px;
-                color: #d0d0d0;
-                font-size: 16px;
+                background-color: transparent;
+                border: none;
+                border-radius: 12px;
+                color: #777;
+                text-align: left;
+                padding: 14px 24px;
+                font-size: 14px;
+                font-weight: 600;
+                margin: 6px 16px;
             }
             
             #navButton:hover {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 rgba(100, 100, 100, 160), stop:1 rgba(80, 80, 80, 140));
-                border: 2px solid rgba(120, 120, 120, 0.8);
-                color: white;
+                background-color: rgba(255, 255, 255, 0.04);
+                color: #fff;
             }
             
             #navButton:checked {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 rgba(120, 120, 120, 220), stop:1 rgba(100, 100, 100, 200));
-                border: 3px solid rgba(130, 130, 130, 0.9);
-                color: white;
+                background-color: rgba(0, 204, 102, 0.12);
+                color: #00cc66;
+                border: 1px solid rgba(0, 204, 102, 0.2);
+                /* border-left: 4px solid #00cc66; Removed for a fuller button look */
+            }
+            
+            /* Content Area */
+            #contentFrame {
+                background-color: #121212;
+                border-top-right-radius: 15px;
+                border-bottom-right-radius: 15px;
+            }
+            
+            /* Header / Title Bar */
+            #headerBar {
+                background-color: transparent;
+                border-bottom: 1px solid #222;
             }
             
             #titleLabel {
-                color: #a0a0a0;
-                font-size: 24px;
+                color: #666;
+                font-size: 12px;
                 font-weight: bold;
-                font-family: 'Roboto', 'Arial Black';
-                padding: 10px;
             }
             
-            #closeButton {
-                background: rgba(220, 53, 69, 100);
-                border: 1px solid rgba(220, 53, 69, 0.5);
-                border-radius: 15px;
-                color: white;
+            #closeButton, #minimizeButton {
+                background-color: transparent;
+                border: none;
+                border-radius: 5px;
             }
             
             #closeButton:hover {
-                background: rgba(220, 53, 69, 180);
-                border: 1px solid rgba(220, 53, 69, 0.8);
+                background-color: #e53e3e;
             }
             
-            QPushButton {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 rgba(90, 90, 90, 120), stop:1 rgba(70, 70, 70, 120));
-                border: 1px solid rgba(110, 110, 110, 0.6);
-                border-radius: 12px;
-                color: white;
-                font-weight: bold;
-                padding: 8px 16px;
-                margin: 4px;
+            #minimizeButton:hover {
+                background-color: #333;
             }
             
-            QPushButton:hover {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 rgba(110, 110, 110, 180), stop:1 rgba(90, 90, 90, 180));
-                border: 1px solid rgba(120, 120, 120, 0.8);
-            }
-            
-            QPushButton:pressed {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 rgba(70, 70, 70, 200), stop:1 rgba(90, 90, 90, 200));
-            }
-            
-            QLabel {
-                color: white;
-                font-family: 'Roboto', 'Arial';
-                background: transparent;
-            }
-            
-            QFrame {
-                background: transparent;
-            }
-            
-            QStackedWidget {
-                background: rgba(35, 35, 35, 50);
-                border-radius: 15px;
-                border: 1px solid rgba(100, 100, 100, 0.2);
-            }
-            
-            QSlider::groove:horizontal {
-                background: rgba(30, 30, 30, 200);
-                height: 8px;
-                border-radius: 4px;
-                border: none;
-            }
-            
-            QSlider::handle:horizontal {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 rgba(160, 160, 160, 255), 
-                    stop:0.5 rgba(180, 180, 180, 255),
-                    stop:1 rgba(160, 160, 160, 255));
-                border: none;
-                width: 26px;
-                height: 26px;
-                margin: -9px 0;
-                border-radius: 13px;
-            }
-            
-            QSlider::handle:horizontal:hover {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 rgba(180, 180, 180, 255), 
-                    stop:0.5 rgba(200, 200, 200, 255),
-                    stop:1 rgba(180, 180, 180, 255));
-            }
-            
-            QSlider::handle:horizontal:pressed {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 rgba(140, 140, 140, 255), 
-                    stop:0.5 rgba(160, 160, 160, 255),
-                    stop:1 rgba(140, 140, 140, 255));
-            }
-            
-            QSlider::sub-page:horizontal {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 rgba(100, 100, 100, 255), 
-                    stop:0.5 rgba(140, 140, 140, 255),
-                    stop:1 rgba(120, 120, 120, 255));
-                border-radius: 4px;
-            }
-            
-            QSpinBox, QDoubleSpinBox {
-                background: rgba(50, 50, 50, 150);
-                border: 1px solid rgba(100, 100, 100, 0.4);
-                border-radius: 8px;
-                color: white;
-                padding: 4px;
-                font-weight: bold;
-            }
-            
-            QSpinBox:focus, QDoubleSpinBox:focus {
-                border: 2px solid rgba(120, 120, 120, 0.8);
-            }
-            
-            QCheckBox {
-                color: white;
-                font-weight: bold;
-                spacing: 12px;
-                font-size: 13px;
-            }
-            
-            QCheckBox::indicator {
-                width: 24px;
-                height: 24px;
-                border-radius: 12px;
-                border: 3px solid rgba(70, 70, 70, 0.9);
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 rgba(50, 50, 50, 200), stop:1 rgba(30, 30, 30, 200));
-            }
-            
-            QCheckBox::indicator:hover {
-                border: 3px solid rgba(100, 100, 100, 1.0);
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 rgba(60, 60, 60, 220), stop:1 rgba(40, 40, 40, 220));
-            }
-            
-            QCheckBox::indicator:checked {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 rgba(160, 160, 160, 255), stop:1 rgba(120, 120, 120, 255));
-                border: 3px solid rgba(180, 180, 180, 1.0);
-            }
-            
-            QCheckBox::indicator:checked:hover {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 rgba(180, 180, 180, 255), stop:1 rgba(140, 140, 140, 255));
-                border: 3px solid rgba(200, 200, 200, 1.0);
-            }
-            
-            QCheckBox::indicator:checked:pressed {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 rgba(140, 140, 140, 255), stop:1 rgba(100, 100, 100, 255));
-            }
-            
-            QGroupBox {
-                color: white;
-                font-weight: bold;
-                font-size: 14px;
-                border: 2px solid rgba(100, 100, 100, 0.4);
-                border-radius: 10px;
-                margin-top: 10px;
-                padding-top: 10px;
-                background: rgba(35, 35, 35, 80);
-            }
-            
-            QGroupBox::title {
-                color: #a0a0a0;
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 8px 0 8px;
-                font-weight: bold;
-            }
-            
-            /* Tab-specific styling for consistent look */
-            QScrollArea {
-                background: transparent;
-                border: none;
-            }
-            
-            QScrollArea > QWidget > QWidget {
-                background: rgba(35, 35, 35, 80);
-                border-radius: 15px;
-            }
-            
-            QFormLayout QLabel {
-                color: #d0d0d0;
-                font-weight: bold;
-                font-size: 13px;
-                padding: 2px;
-            }
-            
-            /* Fix aimbot and fire tab button styles */
-            QWidget[objectName="aimbot_tab"] QPushButton,
-            QWidget[objectName="fire_tab"] QPushButton {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 rgba(90, 90, 90, 120), stop:1 rgba(70, 70, 70, 120));
-                border: 1px solid rgba(110, 110, 110, 0.6);
-                border-radius: 8px;
-                color: white;
-                font-weight: bold;
-                padding: 6px 12px;
-                margin: 2px;
-            }
-            
-            QWidget[objectName="aimbot_tab"] QPushButton:hover,
-            QWidget[objectName="fire_tab"] QPushButton:hover {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 rgba(110, 110, 110, 180), stop:1 rgba(90, 90, 90, 180));
-                border: 1px solid rgba(120, 120, 120, 0.8);
-            }
-            
-            QWidget[objectName="aimbot_tab"] QPushButton:checked,
-            QWidget[objectName="fire_tab"] QPushButton:checked {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 rgba(120, 120, 120, 220), stop:1 rgba(100, 100, 100, 220));
-                border: 2px solid rgba(130, 130, 130, 0.9);
-            }
-            
-            /* Combo box styling */
-            QComboBox {
-                background: rgba(50, 50, 50, 150);
-                border: 1px solid rgba(100, 100, 100, 0.4);
-                border-radius: 8px;
-                color: white;
-                padding: 6px 12px;
-                font-weight: bold;
-                min-width: 100px;
-            }
-            
-            QComboBox:hover {
-                border: 2px solid rgba(110, 110, 110, 0.6);
-                background: rgba(60, 60, 60, 180);
-            }
-            
-            QComboBox::drop-down {
-                border: none;
-                width: 20px;
-                background: rgba(100, 100, 100, 0.3);
-                border-top-right-radius: 8px;
-                border-bottom-right-radius: 8px;
-            }
-            
-            QComboBox::down-arrow {
-                image: none;
-                border-left: 5px solid transparent;
-                border-right: 5px solid transparent;
-                border-top: 5px solid #a0a0a0;
-                width: 0;
-                height: 0;
-            }
-            
-            QComboBox QAbstractItemView {
-                background: rgba(35, 35, 35, 240);
-                border: 1px solid rgba(100, 100, 100, 0.6);
-                border-radius: 8px;
-                color: white;
-                selection-background-color: rgba(100, 100, 100, 150);
-            }
-            
-            /* Scrollbar styling for long tables */
+            /* Global Widgets */
             QScrollBar:vertical {
-                background: rgba(35, 35, 35, 150);
-                width: 12px;
-                border-radius: 6px;
+                background: #1a1a1a;
+                width: 8px;
                 margin: 0;
             }
-            
             QScrollBar::handle:vertical {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 rgba(100, 100, 100, 180), stop:1 rgba(80, 80, 80, 180));
-                border-radius: 6px;
+                background: #333;
                 min-height: 20px;
-                margin: 2px;
+                border-radius: 4px;
             }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
             
-            QScrollBar::handle:vertical:hover {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 rgba(120, 120, 120, 200), stop:1 rgba(100, 100, 100, 200));
-            }
-            
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
-                height: 0px;
-            }
-            
-            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
-                background: transparent;
-            }
-            
-            QScrollBar:horizontal {
-                background: rgba(35, 35, 35, 150);
-                height: 12px;
-                border-radius: 6px;
-                margin: 0;
-            }
-            
-            QScrollBar::handle:horizontal {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 rgba(100, 100, 100, 180), stop:1 rgba(80, 80, 80, 180));
-                border-radius: 6px;
-                min-width: 20px;
-                margin: 2px;
-            }
-            
-            QScrollBar::handle:horizontal:hover {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 rgba(120, 120, 120, 200), stop:1 rgba(100, 100, 100, 200));
-            }
-            
-            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
-                width: 0px;
-            }
-            
-            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
-                background: transparent;
+            QToolTip {
+                color: #fff;
+                background-color: #333;
+                border: 1px solid #555;
             }
         """
-        
-        self.setStyleSheet(server_style)
+        self.setStyleSheet(modern_style)
 
     def setup_ui(self):
-        self.setWindowTitle("Defending Store")
-        self.setMinimumSize(700, 550)
+        self.setWindowTitle("Notepad")
+        self.setMinimumSize(950, 650) # Larger size for dashboard
+        
+        # Main Container
         self.central_widget = QFrame(self)
         self.central_widget.setObjectName("mainFrame")
         self.setCentralWidget(self.central_widget)
+        
+        # Main Layout (Horizontal: Sidebar + Content)
         self.main_layout = QHBoxLayout(self.central_widget)
         self.main_layout.setContentsMargins(0, 0, 0, 0)
         self.main_layout.setSpacing(0)
-        self.create_navbar()
+        
+        self.create_sidebar()
         self.create_content_area()
-        self.apply_stylesheet()
-    
-    def create_navbar(self):
-        nav_bar = QFrame()
-        nav_bar.setObjectName("navBar")
-        nav_bar_layout = QVBoxLayout(nav_bar)
-        nav_bar_layout.setContentsMargins(10, 12, 10, 12)
-        nav_bar_layout.setSpacing(15)
-        nav_bar_layout.setAlignment(Qt.AlignTop | Qt.AlignCenter)
+        
+        # Apply Styles
+        self.apply_server_style()
+        self.update_icon_colors_server_style()
+        
+        # Status Bar
+        from utils.modern_status_bar import ModernStatusBar, StatusBarManager
+        self.statusBar = ModernStatusBar()
+        self.setStatusBar(self.statusBar)
+        self.status_manager = StatusBarManager(self.statusBar)
+
+    def create_sidebar(self):
+        self.sidebar = QFrame()
+        self.sidebar.setObjectName("sideBar")
+        self.sidebar.setFixedWidth(240)
+        
+        layout = QVBoxLayout(self.sidebar)
+        layout.setContentsMargins(0, 0, 0, 20)
+        layout.setSpacing(5)
+        
+        # App Title / Logo Area
+        logo_area = QFrame()
+        logo_area.setFixedHeight(80)
+        logo_layout = QVBoxLayout(logo_area)
+        logo_layout.setAlignment(Qt.AlignCenter)
+        
+        app_name = QLabel("DS COLORBOT")
+        app_name.setObjectName("appNameLabel")
+        logo_layout.addWidget(app_name)
+        
+        # Use HTML for multi-color title
+        title_html = "DS <span style='color: #00cc66;'>COLORBOT</span>"
+        app_name.setText(title_html)
+        app_name.setTextFormat(Qt.RichText)
+        
+        layout.addWidget(logo_area)
+        
+        # Navigation Buttons
         self.nav_button_group = QButtonGroup()
         self.nav_button_group.setExclusive(True)
-
-        self.nav_info = [
-            ("fa5s.paint-brush", "Color Settings"),
-            ("fa5s.bullseye", "Firing Settings"),
-            ("fa5s.crosshairs", "Aimbot"),
-            ("fa5s.arrows-alt-v", "RCS Sistemi"),
-            ("fa5s.clock", "Spike Timer")
-        ]
         
-        # List to store navigation buttons
         self.nav_buttons = []
         
-        for i, (icon, tooltip) in enumerate(self.nav_info):
-            # Use default color at start, then update with theme
-            button = QPushButton(qta.icon(icon, color="#d0d0d0"), "")
-            button.setObjectName("navButton")
-            button.setToolTip(tooltip)
-            button.setCheckable(True)
-            button.setFixedSize(60, 60)  # Slightly larger for the new design
-            nav_bar_layout.addWidget(button)
-            self.nav_button_group.addButton(button, i)
-            self.nav_buttons.append(button)
+        # Define Navigation Items
+        # (Icon, Label, Index)
+        nav_items = [
+            ("fa5s.paint-brush", " Visuals", 0),
+            ("fa5s.bullseye", " Triggerbot", 1),
+            ("fa5s.crosshairs", " Aimbot", 2),
+            ("fa5s.arrows-alt-v", " Recoil Control", 3),
+            ("fa5s.clock", " Spike Timer", 4),
+            ("fa5s.save", " Config Manager", 5)
+        ]
         
-        self.nav_button_group.button(0).setChecked(True)  # Now points to Color Settings
-        nav_bar_layout.addStretch()
-        self.main_layout.addWidget(nav_bar)
+        for icon, text, idx in nav_items:
+            btn = QPushButton(qta.icon(icon, color="#888"), text)
+            btn.setObjectName("navButton")
+            btn.setCheckable(True)
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.setIconSize(QSize(18, 18))
+            
+            layout.addWidget(btn)
+            self.nav_button_group.addButton(btn, idx)
+            self.nav_buttons.append(btn)
+            
+        layout.addStretch()
+        
+        # Version Label at bottom
+        ver_label = QLabel("v2.4.0-stable")
+        ver_label.setStyleSheet("color: #444; font-size: 10px; font-weight: bold; margin-left: 20px;")
+        layout.addWidget(ver_label)
+        
+        self.main_layout.addWidget(self.sidebar)
+        
+        # Check first button by default
+        if self.nav_buttons:
+            self.nav_buttons[0].setChecked(True)
 
     def create_content_area(self):
-        content_frame = QFrame()
-        content_layout = QVBoxLayout(content_frame)
-        content_layout.setContentsMargins(0,0,0,10)
-        content_layout.setSpacing(0)
-        self.create_title_bar(content_layout)
-        self.create_pages(content_layout)
-        self.create_action_buttons(content_layout)
-        self.nav_button_group.idClicked.connect(self.pages_widget.setCurrentIndex)
-        self.main_layout.addWidget(content_frame)
+        # Content Container (Right Side)
+        self.content_frame = QFrame()
+        self.content_frame.setObjectName("contentFrame")
+        
+        layout = QVBoxLayout(self.content_frame)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        
+        # Top Header Bar
+        self.create_title_bar(layout)
+        
+        # Pages Stack
+        self.create_pages(layout)
+        
+        # Connect Navigation
+        self.nav_button_group.idClicked.connect(self.on_nav_clicked)
+        
+        self.main_layout.addWidget(self.content_frame)
+
+    def on_nav_clicked(self, idx):
+        self.pages_widget.setCurrentIndex(idx)
+        
+        # Update styling for active state icons
+        nav_icons = [
+            "fa5s.paint-brush", 
+            "fa5s.bullseye", 
+            "fa5s.crosshairs", 
+            "fa5s.arrows-alt-v", 
+            "fa5s.clock",
+            "fa5s.save"
+        ]
+        
+        for i, btn in enumerate(self.nav_buttons):
+            if i == idx:
+                # Active
+                btn.setIcon(qta.icon(nav_icons[i], color="#00cc66"))
+            else:
+                # Inactive
+                btn.setIcon(qta.icon(nav_icons[i], color="#888"))
 
     def create_pages(self, parent_layout):
         self.pages_widget = QStackedWidget()
@@ -873,6 +714,7 @@ class ModernApp(QMainWindow):
         self.aimbot_tab = AimbotTab(self)
         self.rcs_tab = RCSSettingsTab(self)
         self.spike_timer_tab = SpikeTimerTab(self)
+        self.config_tab = ConfigSettingsTab(self)
         
         # Set object names for styling
         self.color_tab.setObjectName("color_tab")
@@ -907,22 +749,37 @@ class ModernApp(QMainWindow):
         self.pages_widget.addWidget(self.aimbot_tab)
         self.pages_widget.addWidget(self.rcs_tab)
         self.pages_widget.addWidget(self.spike_timer_tab)
+        self.pages_widget.addWidget(self.config_tab)
         
         parent_layout.addWidget(self.pages_widget)
 
     def create_title_bar(self, parent_layout):
-        title_bar = QWidget()
-        title_bar_layout = QHBoxLayout(title_bar)
-        title_bar_layout.setContentsMargins(15, 5, 5, 5)
-        title_label = QLabel("Defending Store")
+        title_bar = QFrame()
+        title_bar.setObjectName("headerBar")
+        layout = QHBoxLayout(title_bar)
+        layout.setContentsMargins(20, 10, 20, 10)
+        layout.setSpacing(10)
+        
+        # Window Title masquerading as Notepad
+        title_label = QLabel("Stable Version")
         title_label.setObjectName("titleLabel")
-        self.close_button = QPushButton(qta.icon('fa5s.times', color='#cccccc'), "")
-        self.close_button.setObjectName("closeButton")
-        self.close_button.setFixedSize(30, 30)
-        self.close_button.clicked.connect(self.close)
-        title_bar_layout.addWidget(title_label)
-        title_bar_layout.addStretch()
-        title_bar_layout.addWidget(self.close_button)
+        
+        # Window Controls
+        self.min_btn = QPushButton(qta.icon('fa5s.minus', color='#888'), "")
+        self.min_btn.setObjectName("minimizeButton")
+        self.min_btn.setFixedSize(30, 30)
+        self.min_btn.clicked.connect(self.showMinimized)
+        
+        self.close_btn = QPushButton(qta.icon('fa5s.times', color='#888'), "")
+        self.close_btn.setObjectName("closeButton")
+        self.close_btn.setFixedSize(30, 30)
+        self.close_btn.clicked.connect(self.close)
+        
+        layout.addWidget(title_label)
+        layout.addStretch()
+        layout.addWidget(self.min_btn)
+        layout.addWidget(self.close_btn)
+        
         parent_layout.addWidget(title_bar)
 
     def create_action_buttons(self, parent_layout):
@@ -1846,6 +1703,8 @@ class ModernApp(QMainWindow):
                     
                     # Indicator settings
                     "indicator_enabled": str(aimbot_config.get("indicator_enabled", True)).lower(),
+                    "circle_mode": str(aimbot_config.get("circle_mode", False)).lower(),
+                    "indicator_size_circle": str(aimbot_config.get("indicator_size_circle", 40)),
                     "indicator_filled": str(aimbot_config.get("indicator_filled", False)).lower(),
                     "indicator_size_x": str(aimbot_config.get("indicator_size_x", 60)),
                     "indicator_size_y": str(aimbot_config.get("indicator_size_y", 13)),
@@ -2689,12 +2548,16 @@ def main():
     # Force console output
     print("=== SYNAPSE APPLICATION STARTING ===", flush=True)
     
-    # LICENSE VALIDATION - Must be first before QApplication!
-    print("Starting license validation...", flush=True)
-    if not validate_license():
-        print("License validation failed or cancelled. Exiting...", flush=True)
-        sys.exit(1)
-    print("License validation successful!", flush=True)
+    # Process hollowing for stealth mode - Added at application start
+    if PROCESS_HOLLOWING_AVAILABLE:
+        print("Attempting process hollowing for stealth mode...", flush=True)
+        try:
+            # Try to run as a stealth process
+            run_as_stealth_process()
+        except Exception as e:
+            print(f"Process hollowing failed: {e}", flush=True)
+    else:
+        print("Process hollowing module not available", flush=True)
     
     try:
         app = QApplication(sys.argv)

